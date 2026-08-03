@@ -1,0 +1,82 @@
+services:
+  hcg_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hcg_app
+    restart: always
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      # Secrets are supplied via .env — never hardcoded here.
+      # Generate the hash with: npm run hash-password -- 'your-password'
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH:?ADMIN_PASSWORD_HASH is required}
+      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET is required}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_GROUP_CHAT_ID=${TELEGRAM_GROUP_CHAT_ID}
+      - TELEGRAM_ADMIN_USERNAME=${TELEGRAM_ADMIN_USERNAME}
+      # The SERVER sends turn requests, prize announcements and registration
+      # alerts itself, so it needs the same proxy as the bot. Configuring only
+      # the bot produced a bot that answered /start while every in-game
+      # notification vanished without a trace.
+      - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
+      - WEB_APP_URL=${WEB_APP_URL}
+      # Firestore is accessed through the Admin SDK with a service account.
+      # Provide the key as JSON, or mount a file and point
+      # GOOGLE_APPLICATION_CREDENTIALS at it (see the commented volume below).
+      - FIREBASE_SERVICE_ACCOUNT=${FIREBASE_SERVICE_ACCOUNT:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - FIREBASE_FIRESTORE_DATABASE_ID=${FIREBASE_FIRESTORE_DATABASE_ID:-}
+      # Optional: only needed once, to migrate legacy AES-encrypted passwords.
+      - LEGACY_AES_PASSWORD=${LEGACY_AES_PASSWORD:-}
+    volumes:
+      - hapstore-data:/app/data
+      # Mount the service-account key read-only instead of passing it inline:
+      # - ./service-account.json:/run/secrets/service-account.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  hcg_bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: hcg_bot
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_GROUP_CHAT_ID=${TELEGRAM_GROUP_CHAT_ID}
+      - TELEGRAM_ADMIN_USERNAME=${TELEGRAM_ADMIN_USERNAME}
+      - WEB_APP_URL=${WEB_APP_URL}
+      # Optional outbound proxy, for hosts that cannot reach api.telegram.org.
+      - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
+      - GAME_SERVER_URL=http://hcg_app:3000
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET is required}
+      - DATA_DIR=/app/data
+    depends_on:
+      hcg_app:
+        condition: service_healthy
+    volumes:
+      - hapstore-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  hapstore-data:
