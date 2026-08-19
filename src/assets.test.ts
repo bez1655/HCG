@@ -147,9 +147,8 @@ describe("cache-busting tags", () => {
  * облачные диски не всегда переносят. На сервере это выглядит как
  * «permission denied» на ровном месте.
  *
- * fix-permissions.sh чинит их автоматически, но искал только в deploy/,
- * termux/ и scripts/ — и hcg-бот-молчит.sh в корне уехал в архив без прав.
- * Тест смотрит туда же, куда смотрит пользователь: на все .sh в проекте.
+ * fix-permissions.sh restores the bit. The test checks every .sh the
+ * user might run on the VPS.
  */
 describe("shell scripts are executable", () => {
   const ROOT = path.resolve(__dirname, "..");
@@ -184,6 +183,6 @@ describe("shell scripts are executable", () => {
     // Не косметика: именно пропуск корня и отправил диагностический скрипт
     // в архив нерабочим.
     const script = fs.readFileSync(path.join(ROOT, "scripts", "fix-permissions.sh"), "utf-8");
-    expect(script).toMatch(/find \. deploy termux scripts/);
+    expect(script).toMatch(/find \. deploy scripts/);
   });
 });

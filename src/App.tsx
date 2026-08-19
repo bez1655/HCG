@@ -293,13 +293,24 @@ export default function App() {
     // Full snapshot: sent once on connect, and after bulk operations.
     newSocket.on("state:update", (updatedState: GameState) => {
       clearTimeout(stateDeadline);
-      setGameState(updatedState);
+      setGameState((prev) => {
+        const incoming = updatedState?.revision ?? 0;
+        const have = prev?.revision ?? 0;
+        if (prev && incoming > 0 && incoming < have) return prev;
+        return updatedState;
+      });
     });
 
     // Incremental update: only the slices that actually changed. Merged into
     // the current state so a routine roll transfers ~1.4 KB instead of ~68 KB.
     newSocket.on("state:patch", (patch: Partial<GameState>) => {
-      setGameState((prev) => (prev ? { ...prev, ...patch } : prev));
+      setGameState((prev) => {
+        if (!prev) return prev;
+        const incoming = patch.revision ?? 0;
+        const have = prev.revision ?? 0;
+        if (incoming > 0 && incoming < have) return prev;
+        return { ...prev, ...patch };
+      });
     });
 
     // Authoritative dice result from the server.

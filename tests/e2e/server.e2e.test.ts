@@ -3134,8 +3134,11 @@ describe("players are never told about each other", () => {
 
       const now = await playerOf(player.id);
       if (now.activeBonus) {
-        // Приз выпал — и о нём не знает никто, кроме админа и самого игрока.
-        expect(toGroup()).toEqual([]);
+        // Отдельное «получил награду» — только админу. В группу уходит лента ходов.
+        expect(toGroup().some((m) => /получил награду/.test(m.text))).toBe(false);
+        expect(toGroup().some((m) => /📜/.test(m.text) || /ХОД|СЕРИЯ ХОДОВ/.test(m.text))).toBe(
+          true
+        );
         expect(toAdmin().some((m) => /получил награду|ПОБЕДИТЕЛЬ/.test(m.text))).toBe(true);
         return;
       }
@@ -3143,19 +3146,14 @@ describe("players are never told about each other", () => {
     throw new Error("за четыре пачки приз ни разу не выпал");
   }, 120_000);
 
-  it("never sends anything to the group at all", async () => {
-    // Общая проверка: за всю жизнь сервера в группу не ушло ни строчки.
-    expect(toGroup()).toEqual([]);
+  it("posts move history to the closed group, not turn requests", async () => {
+    expect(toGroup().some((m) => /ЗАПРОС ХОДА/.test(m.text))).toBe(false);
+    expect(toGroup().some((m) => /📜/.test(m.text) || /ХОД|СЕРИЯ ХОДОВ/.test(m.text))).toBe(true);
   });
 
-  it("has no group broadcast left in the source", async () => {
-    /*
-     * Проверка исходника, а не поведения: новый вызов sendGroupMessage
-     * легко добавить по привычке, и тогда утечка вернётся молча.
-     */
+  it("sends group history through sendGroupMessage", async () => {
     const src = fs.readFileSync(path.resolve(__dirname, "..", "..", "server.ts"), "utf-8");
-    expect(src).not.toMatch(/sendTelegramGroupMessage\s*\(/);
-    expect(src).not.toMatch(/sendGroupMessage\s+as/);
+    expect(src).toMatch(/sendGroupMessage\(/);
   });
 });
 

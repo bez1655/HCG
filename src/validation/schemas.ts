@@ -118,6 +118,17 @@ export const botMessagePlayerSchema = z.object({
   admin: z.string().max(64).optional(),
 });
 
+/** Рассылка всем зарегистрированным игрокам. */
+export const botBroadcastSchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+  admin: z.string().max(64).optional(),
+});
+
+/** Выписка перемещений одного игрока. */
+export const botPlayerHistorySchema = z.object({
+  target: z.string().trim().min(1).max(64),
+});
+
 export const adminPasswordsSchema = z.object({
   password: z.string().min(1).max(256),
 });

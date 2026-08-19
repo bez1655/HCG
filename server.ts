@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { hashPassword, verifyPassword, escapeHtml, generatePassword } from "./src/utils/security";
 import * as firestore from "./src/persistence/firestore";
 import { atomicWrite, ensureDir } from "./src/persistence/files";
+import { choosePersistedState } from "./src/persistence/chooseState";
 import { resolveMove, isMilestone } from "./src/game/rules";
 import { pickAlias, publicName } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
@@ -17,6 +18,14 @@ import { findMentions } from "./src/game/mentions";
 import { normaliseHideAfterHours, DEFAULT_HIDE_AFTER_HOURS } from "./src/game/presence";
 import { formatRollReport, RollRecord } from "./src/game/rollReport";
 import { buildTurnOutcome, formatTurnOutcomeForTelegram } from "./src/game/turnOutcome";
+import {
+  findPlayerByTarget,
+  formatPlayerHistoryHtml,
+  formatPlayerHistoryText,
+  mergeMoves,
+  movesFromLogs,
+  type PlayerMove,
+} from "./src/game/playerHistory";
 import defaultCellsData from "./src/game/data/cells.json" with { type: "json" };
 import {
   ADMIN_PLAYER_ID,
@@ -32,6 +41,7 @@ import {
   clearButtons as clearTelegramButtons,
   rememberUser as rememberTelegramUser,
   persist as saveTelegramUsers,
+  sendGroupMessage,
   type SentMessage,
 } from "./src/telegram/notifier";
 import { verifyInitData, normaliseHandle } from "./src/telegram/initData";
@@ -54,6 +64,8 @@ import {
   botApproveTurnSchema,
   botRejectTurnSchema,
   botMessagePlayerSchema,
+  botBroadcastSchema,
+  botPlayerHistorySchema,
   adminPasswordsSchema,
   telegramUserSyncSchema,
   chatSendSchema,
@@ -280,6 +292,7 @@ const CALIBRATION_FILE = path.join(DATA_DIR, "game-calibration-persistent.json")
  *  and the state broadcast to clients does not grow without bound. */
 const MAX_LOGS_IN_STATE = 300;
 const LOG_ARCHIVE_FILE = path.join(DATA_DIR, "game-logs-archive.jsonl");
+const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
 
 /**
  * Build marker for the game server.
@@ -287,7 +300,7 @@ const LOG_ARCHIVE_FILE = path.join(DATA_DIR, "game-logs-archive.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-08-16.1";
+const SERVER_BUILD = "2026-08-19.1";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -447,6 +460,111 @@ function addLog(entry: GameLog) {
   trimLogs();
 }
 
+function recordPlayerMove(
+  player: Player,
+  move: {
+    kind: PlayerMove["kind"];
+    fromCell: number | null;
+    toCell: number | null;
+    steps: number | null;
+    note: string;
+  }
+): void {
+  const row = {
+    playerId: player.id,
+    name: player.name,
+    alias: player.alias ?? null,
+    at: Date.now(),
+    timeLabel: new Date().toLocaleString("ru-RU"),
+    ...move,
+  };
+  fs.appendFile(MOVES_FILE, JSON.stringify(row) + "\n", "utf-8", (err) => {
+    if (err) log.error("Could not append player move", errorContext(err));
+  });
+
+  const who = player.alias
+    ? `<b>${escapeHtml(player.alias)}</b> (${escapeHtml(player.name)})`
+    : `<b>${escapeHtml(player.name)}</b>`;
+  let line = `📜 ${who}`;
+  if (move.kind === "roll") {
+    const from = move.fromCell != null ? `${move.fromCell} ➔ ` : "";
+    line += `\n🎲 ${from}<b>${move.toCell ?? "?"}</b> · кубик ${move.steps ?? "?"}`;
+    if (move.note) line += `\n<i>${escapeHtml(move.note)}</i>`;
+  } else if (move.kind === "admin") {
+    line += `\n🛠️ админ: ${move.fromCell} ➔ <b>${move.toCell}</b>`;
+  } else if (move.kind === "restart") {
+    line += `\n🔄 новый круг с клетки ${move.fromCell ?? "?"} на 0`;
+  } else if (move.kind === "skip") {
+    line += `\n⏳ пропуск хода`;
+  } else {
+    line += `\n${escapeHtml(move.note || move.kind)}`;
+  }
+  void sendGroupMessage(line);
+}
+
+function loadStoredMoves(playerId: string): PlayerMove[] {
+  if (!fs.existsSync(MOVES_FILE)) return [];
+  try {
+    const out: PlayerMove[] = [];
+    for (const line of fs.readFileSync(MOVES_FILE, "utf-8").split("\n")) {
+      if (!line.trim()) continue;
+      let row: any;
+      try {
+        row = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (row.playerId !== playerId) continue;
+      out.push({
+        at: Number(row.at) || 0,
+        timeLabel: String(row.timeLabel || ""),
+        kind: row.kind || "other",
+        fromCell: typeof row.fromCell === "number" ? row.fromCell : null,
+        toCell: typeof row.toCell === "number" ? row.toCell : null,
+        steps: typeof row.steps === "number" ? row.steps : null,
+        note: String(row.note || ""),
+      });
+    }
+    return out;
+  } catch (err) {
+    log.error("Could not read player-moves.jsonl", errorContext(err));
+    return [];
+  }
+}
+
+function loadArchivedLogs(): GameLog[] {
+  if (!fs.existsSync(LOG_ARCHIVE_FILE)) return [];
+  try {
+    const out: GameLog[] = [];
+    for (const line of fs.readFileSync(LOG_ARCHIVE_FILE, "utf-8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        out.push(JSON.parse(line));
+      } catch {
+        /* skip */
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function buildPlayerHistory(player: Player) {
+  const moves = mergeMoves(
+    loadStoredMoves(player.id),
+    movesFromLogs(loadArchivedLogs(), player),
+    movesFromLogs(gameState.logs || [], player)
+  );
+  return {
+    playerId: player.id,
+    name: player.name,
+    alias: player.alias ?? null,
+    cell: player.cell,
+    moves,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Snapshots
 //
@@ -598,7 +716,11 @@ function flushRollReport(player: Player, force = false): void {
     rolls,
     turnsRemaining: remaining,
   });
-  if (text) void sendTelegramMessageToAdmin(text);
+  if (text) {
+    void sendTelegramMessageToAdmin(text);
+    // Та же сводка пачки — в закрытую группу.
+    void sendGroupMessage(text);
+  }
 }
 
 /** Broadcast the current state to every connected client.
@@ -1031,6 +1153,9 @@ function performLocalWrite(sync = false) {
 
 async function saveState() {
   try {
+    gameState.revision = (typeof gameState.revision === "number" ? gameState.revision : 0) + 1;
+    gameState.updatedAt = Date.now();
+
     // Save locally with a 500ms debounce to prevent blocking the event loop
     if (!localWriteTimeout) {
       performLocalWrite();
@@ -1099,37 +1224,33 @@ async function start() {
     }
   }
 
-  let loadedFromFirestore = false;
-
-  // Load state from Firestore first if available, fallback to local file, fallback to defaults
+  let remoteState: GameState | null = null;
   {
     const data = await firestore.readDoc<GameState>("gameState");
-    if (data) {
-      const migrated = migrateState(data);
-      gameState =
-        migrated.cells && migrated.cells.length === 65
-          ? migrated
-          : { ...migrated, cells: generateDefaultCells() };
-      loadedFromFirestore = true;
-      log.info("Loaded game state from Firestore");
+    if (data) remoteState = migrateState(data);
+  }
+
+  let localState: GameState | null = null;
+  if (fs.existsSync(STATE_FILE)) {
+    try {
+      localState = migrateState(JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")));
+    } catch (localErr) {
+      log.error("Failed to load local state fallback", errorContext(localErr));
     }
   }
 
-  if (!loadedFromFirestore) {
-    if (fs.existsSync(STATE_FILE)) {
-      try {
-        const data = fs.readFileSync(STATE_FILE, "utf-8");
-        const parsed = migrateState(JSON.parse(data));
-        if (parsed.cells && parsed.cells.length === 65) {
-          gameState = { ...gameState, ...parsed };
-        } else {
-          gameState = { ...gameState, ...parsed, cells: generateDefaultCells() };
-        }
-        log.info("Loaded game state from local fallback");
-      } catch (localErr) {
-        log.error("Failed to load local state fallback", errorContext(localErr));
-      }
-    }
+  const picked = choosePersistedState(localState, remoteState);
+  if (picked.state) {
+    gameState =
+      picked.state.cells && picked.state.cells.length === 65
+        ? { ...gameState, ...picked.state }
+        : { ...gameState, ...picked.state, cells: generateDefaultCells() };
+    log.info("Loaded game state", {
+      source: picked.source,
+      reason: picked.reason,
+      revision: gameState.revision ?? 0,
+      updatedAt: gameState.updatedAt ?? 0,
+    });
   }
 
   // Populate cellCalibrationMap from loaded cells if not already set
@@ -2094,8 +2215,81 @@ async function start() {
     });
   });
 
+  /**
+   * Написать всем зарегистрированным игрокам.
+   *
+   * Не в группу: группа видна всем сразу и утекает в чужие чаты. Каждому —
+   * личное сообщение, тем же путём, что /msg одному.
+   */
+  app.post("/api/admin/bot-broadcast", requireInternalAuth, async (req, res) => {
+    const parsed = validate(botBroadcastSchema, req.body);
+    if (!parsed.ok) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const { text, admin } = parsed.data;
+
+    const recipients = gameState.players.filter(
+      (p) => p.role === "player" && (p.telegramId || p.name)
+    );
+
+    let sent = 0;
+    const failed: string[] = [];
+    for (const player of recipients) {
+      try {
+        await sendTelegramMessage(
+          player.telegramId || player.name,
+          `📢 <b>Сообщение всем игрокам</b>\n\n${escapeHtml(text)}`
+        );
+        sent += 1;
+      } catch {
+        failed.push(shownName(player));
+      }
+    }
+
+    addLog({
+      id: "broadcast_" + Date.now(),
+      message: `📢 Администратор написал всем игрокам (${sent} из ${recipients.length})${admin ? ` (${admin})` : ""}.`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: "admin",
+    });
+    saveState();
+    broadcastSlices("logs");
+
+    return res.json({
+      success: true,
+      total: recipients.length,
+      sent,
+      failed,
+    });
+  });
+
   app.get("/api/admin/logs-history", requireInternalAuth, (req, res) => {
     res.json({ success: true, logs: gameState.logs || [] });
+  });
+
+  /**
+   * Выписка всех перемещений одного игрока.
+   *
+   * Берём постоянный файл player-moves.jsonl (пишется с этой сборки) и
+   * дополняем тем, что ещё лежит в живом журнале и в архиве.
+   */
+  app.get("/api/admin/player-history", requireInternalAuth, (req, res) => {
+    const raw = typeof req.query.target === "string" ? req.query.target : "";
+    const parsed = validate(botPlayerHistorySchema, { target: raw });
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+    const player = findPlayerByTarget(gameState.players, parsed.data.target);
+    if (!player) {
+      return res.status(404).json({ error: `Игрок «${parsed.data.target}» не найден.` });
+    }
+
+    const history = buildPlayerHistory(player);
+    return res.json({
+      success: true,
+      ...history,
+      text: formatPlayerHistoryText(history),
+      html: formatPlayerHistoryHtml(history),
+    });
   });
 
   app.post(
@@ -2472,6 +2666,13 @@ async function start() {
           timestamp: new Date().toLocaleTimeString(),
           type: "system",
         });
+        recordPlayerMove(player, {
+          kind: "skip",
+          fromCell: player.cell,
+          toCell: player.cell,
+          steps: null,
+          note: "пропуск хода",
+        });
 
         // Штраф съел ход и мог закрыть пачку — отчёт по сыгранному не должен
         // застрять из-за раннего выхода.
@@ -2534,6 +2735,13 @@ async function start() {
         message: `🎲 ${shownName(player)} выбросил ${steps} и переместился на клетку ${player.cell}.${bonusText ? " " + bonusText : ""}`,
         timestamp: new Date().toLocaleTimeString(),
         type: "roll",
+      });
+      recordPlayerMove(player, {
+        kind: "roll",
+        fromCell,
+        toCell: player.cell,
+        steps,
+        note: bonusText || "",
       });
 
       // Trigger milestone toasts
@@ -3040,6 +3248,7 @@ async function start() {
       const targetId = isAdmin && typeof pId === "string" && pId ? pId : authPlayerId;
       const player = gameState.players.find((p) => p.id === targetId);
       if (player) {
+        const fromLap = player.cell;
         player.cell = 0;
         player.skipNextTurn = false;
         player.lastRoll = null;
@@ -3049,6 +3258,13 @@ async function start() {
           message: `🔄 Игрок ${shownName(player)} начал новый круг с клетки 0! Пожелаем удачи!`,
           timestamp: new Date().toLocaleTimeString(),
           type: "system",
+        });
+        recordPlayerMove(player, {
+          kind: "restart",
+          fromCell: fromLap,
+          toCell: 0,
+          steps: null,
+          note: "новый круг",
         });
 
         io.emit("toast:achievement", {

@@ -112,6 +112,15 @@ export interface GameLog {
 export interface GameState {
   /** Version of the persisted shape; see migrateState() in server.ts. */
   schemaVersion?: number;
+  /**
+   * Monotonic counter bumped on every save.
+   *
+   * Lets the client ignore an older snapshot that arrives late (reconnect
+   * racing a patch) and lets boot pick the newer of disk vs Firestore.
+   */
+  revision?: number;
+  /** Wall-clock of the last save, ms since epoch. */
+  updatedAt?: number;
   players: Player[];
   cells: Cell[];
   currentPlayerId: string | null;

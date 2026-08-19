@@ -100,6 +100,15 @@ export const config = {
 
   /** Как часто перепроверять текущий прокси, мс. По умолчанию 5 минут. */
   proxyCheckMs: Number(readRaw("TELEGRAM_PROXY_CHECK_MS")) || 5 * 60_000,
+
+  /**
+   * Ходить ли в Telegram через пул прокси.
+   *
+   * На сервере в Голландии Telegram доступен напрямую. Парсер при этом
+   * остаётся — админу нужны живые адреса командой /proxies. Пустая строка,
+   * 0, false, off, no — прямое соединение.
+   */
+  useProxy: !/^(0|false|off|no|direct)$/i.test(readRaw("BOT_USE_PROXY") ?? "1"),
 } as const;
 
 if (!config.webAppUrl) {
@@ -140,5 +149,6 @@ export function describeBotConfig(): Record<string, string> {
     TELEGRAM_PROXY: config.proxyUrl
       ? `${config.proxyUrl.split(/[\n,;]+/).filter((x) => x.trim()).length} адрес(ов)`
       : "not set",
+    BOT_USE_PROXY: config.useProxy ? "yes" : "no (direct)",
   };
 }

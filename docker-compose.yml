@@ -70,6 +70,9 @@ services:
       - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
       - TELEGRAM_PROXY_CHECK_MS=${TELEGRAM_PROXY_CHECK_MS:-60000}
       - PROXY_LEASE_SIZE=${HARVEST_LEASE:-5}
+      # Бот ходит в Telegram напрямую. Парсер (hcg_proxy) при этом живёт —
+      # админ забирает адреса командой /proxies.
+      - BOT_USE_PROXY=${BOT_USE_PROXY:-0}
       - GAME_SERVER_URL=http://hcg_app:3000
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET is required}
       - DATA_DIR=/app/data

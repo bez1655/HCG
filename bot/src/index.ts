@@ -16,6 +16,7 @@ import { BUILD, FEATURES } from "./version.js";
 import { parseProxyEntry, parseProxyList, ProxyPool } from "./proxyPool.js";
 import { LeaseHolder, leaseUrl } from "./leaseClient.js";
 import { PendingCredentialStore } from "./pendingCredentials.js";
+import { formatWorkingProxies, listWorkingProxies } from "./workingProxies.js";
 
 // Announced before anything can fail, so it survives in the log even when the
 // bot cannot reach Telegram. Without it, "nothing changed" cannot be told
@@ -88,10 +89,16 @@ export const proxyPool = new ProxyPool(
   config.apiRoot
 );
 
-console.log(
-  `[HCG bot] Прокси: ${proxyEntries.length} вариант(ов) — ` +
-    proxyEntries.map((e) => e.label).join(", ")
-);
+if (!config.useProxy) {
+  const { entries: directOnly } = parseProxyList("direct");
+  proxyPool.replaceEntries(directOnly);
+  console.log("[HCG bot] Прокси бота выключены (BOT_USE_PROXY=0) — прямое соединение");
+} else {
+  console.log(
+    `[HCG bot] Прокси: ${proxyEntries.length} вариант(ов) — ` +
+      proxyEntries.map((e) => e.label).join(", ")
+  );
+}
 
 export const bot = new Telegraf(BOT_TOKEN, {
   // Агент берётся у пула при каждом запросе: после переключения новые
@@ -367,7 +374,9 @@ const ADMIN_HELP_TEXT =
   "/msg &lt;кого&gt; &lt;текст&gt; — личное сообщение игроку\n" +
   "   по псевдониму: <code>/msg Бэтмен Ваш приз готов</code>\n" +
   "   по хендлу: <code>/msg @ivan Ваш приз готов</code>\n" +
-  "   псевдоним из двух слов — в кавычках\n\n" +
+  "   псевдоним из двух слов — в кавычках\n" +
+  "/all &lt;текст&gt; — написать всем игрокам\n" +
+  "/proxies — рабочие прокси с парсера\n\n" +
   "<b>Журнал и администраторы</b>\n" +
   "/admin_logs [поиск] — журнал игры\n" +
   "/set_admin @username — добавить администратора\n" +
@@ -790,6 +799,102 @@ bot.command("msg", adminManager.middleware(), async (ctx) => {
   }
 });
 
+/**
+ * /all <текст> — написать каждому зарегистрированному игроку в личку.
+ */
+bot.command("all", adminManager.middleware(), async (ctx) => {
+  const text = ctx.message.text.replace(/^\/all(@\S+)?\s*/i, "").trim();
+  if (!text) {
+    return ctx.reply("Использование: /all <текст>\nНапример: /all Магазин завтра закрыт до 14:00");
+  }
+  const adminName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
+
+  try {
+    const res = await internalFetch("/api/admin/bot-broadcast", {
+      method: "POST",
+      body: JSON.stringify({ text, admin: adminName }),
+    });
+    const data = (await res.json()) as {
+      success?: boolean;
+      sent?: number;
+      total?: number;
+      failed?: string[];
+      error?: string;
+    };
+
+    if (!res.ok || !data.success) {
+      return ctx.reply(`❌ ${escapeHtml(data.error || "Не удалось разослать")}`, {
+        parse_mode: "HTML",
+      });
+    }
+
+    const failed = data.failed?.length
+      ? `\nНе доставлено: ${escapeHtml(data.failed.join(", "))}`
+      : "";
+    return ctx.reply(
+      `✅ Разослано <b>${data.sent ?? 0}</b> из <b>${data.total ?? 0}</b>.${failed}`,
+      { parse_mode: "HTML" }
+    );
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
+  }
+});
+
+/**
+ * /proxies — живые адреса из парсера. Бот сам ими не пользуется.
+ */
+bot.command("proxies", adminManager.middleware(), async (ctx) => {
+  const list = listWorkingProxies(config.dataDir, 8);
+  return ctx.reply(formatWorkingProxies(list), { parse_mode: "HTML" });
+});
+
+/**
+ * /history <кого> — все перемещения одного игрока.
+ */
+bot.command("history", adminManager.middleware(), async (ctx) => {
+  const target = ctx.message.text.replace(/^\/history(@\S+)?\s*/i, "").trim();
+  if (!target) {
+    return ctx.reply(
+      "Использование: /history <@хендл или Псевдоним>\nНапример: /history hapalka228"
+    );
+  }
+
+  try {
+    const res = await internalFetch(
+      `/api/admin/player-history?target=${encodeURIComponent(target)}`
+    );
+    const data = (await res.json()) as {
+      success?: boolean;
+      error?: string;
+      html?: string;
+      text?: string;
+      name?: string;
+      alias?: string | null;
+      moves?: unknown[];
+    };
+
+    if (!res.ok || !data.success) {
+      return ctx.reply(`❌ ${escapeHtml(data.error || "Не удалось получить историю")}`, {
+        parse_mode: "HTML",
+      });
+    }
+
+    await ctx.reply(data.html || "Пусто", { parse_mode: "HTML" });
+
+    const full = data.text || "";
+    if (full.length > 3500 || (data.moves && data.moves.length > 40)) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const who = (data.alias || data.name || target).replace(/[^\w\-а-яё]+/gi, "_");
+      await ctx.replyWithDocument({
+        source: Buffer.from(full, "utf-8"),
+        filename: `HCG-история-${who}-${stamp}.txt`,
+      });
+    }
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
+  }
+});
+
 // Admin Command /list_admins
 bot.command("list_admins", adminManager.middleware(), async (ctx) => {
   const admins = adminManager.getAdmins();
@@ -1195,7 +1300,7 @@ async function ensureRoute(): Promise<boolean> {
         "  • добавьте больше адресов через запятую:\n" +
         "      TELEGRAM_PROXY=socks5://a:1080,socks5://b:1080\n" +
         "  • бесплатные прокси живут часы — надёжнее свой VPS за рубежом;\n" +
-        "  • проверить вручную:  bash hcg-бот-молчит.sh"
+        "  • проверить вручную:  bash deploy/ВСЁ-НА-VPS.sh бот"
     );
     console.error("=".repeat(64) + "\n");
     return false;
@@ -1443,12 +1548,21 @@ if (BOT_TOKEN) {
   //
   // Порядок здесь — не стилистика: список от сборщика и есть способ
   // выбраться из состояния «все известные адреса мертвы».
-  startHarvestWatch();
+  if (config.useProxy) {
+    startHarvestWatch();
+  } else {
+    console.log("[HCG bot] Аренда прокси для бота не используется — парсер работает отдельно");
+  }
 
   // Сначала маршрут, потом бот. Запускать polling без живого соединения
   // бессмысленно: он зависнет молча, и причина потеряется.
   void ensureRoute().then(async (routeOk) => {
     if (!routeOk) {
+      if (!config.useProxy) {
+        clearTimeout(watchdog);
+        console.error("[HCG bot] Прямое соединение с Telegram не отвечает.");
+        process.exit(1);
+      }
       // Последний шанс перед выходом: сборщик мог записать свежий список
       // прямо сейчас. Ждём один его цикл, перечитывая файл, и только потом
       // сдаёмся — перезапуск контейнера стоит дороже, чем эта пауза.
@@ -1468,7 +1582,7 @@ if (BOT_TOKEN) {
       console.log("[HCG bot] Маршрут найден по списку сборщика — продолжаю запуск");
     }
 
-    startRouteWatch();
+    if (config.useProxy) startRouteWatch();
 
     bot
       .launch(() => {

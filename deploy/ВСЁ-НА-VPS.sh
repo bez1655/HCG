@@ -2,19 +2,20 @@
 # =============================================================================
 #  HCG — всё на сервере, из одного места
 # =============================================================================
-#  Где запускать: на сервере (PuTTY), в каталоге проекта
+#  Где:  на сервере (PuTTY), в каталоге проекта
 #  Как:  bash deploy/ВСЁ-НА-VPS.sh
 #
-#  Единая точка входа. Windows больше не нужен ни для чего, кроме доступа
-#  к серверу: развёртывание, отправка в GitHub и сборка приложения для
-#  Android выполняются здесь.
-#
-#  Можно и без меню, по шагам:
-#      bash deploy/ВСЁ-НА-VPS.sh все       — всё подряд
-#      bash deploy/ВСЁ-НА-VPS.sh сервер    — только развернуть
-#      bash deploy/ВСЁ-НА-VPS.sh github    — только отправить в GitHub
-#      bash deploy/ВСЁ-НА-VPS.sh apk       — только собрать приложение
-#      bash deploy/ВСЁ-НА-VPS.sh статус    — что сейчас работает
+#  Без меню:
+#      bash deploy/ВСЁ-НА-VPS.sh все
+#      bash deploy/ВСЁ-НА-VPS.sh сервер
+#      bash deploy/ВСЁ-НА-VPS.sh github
+#      bash deploy/ВСЁ-НА-VPS.sh apk
+#      bash deploy/ВСЁ-НА-VPS.sh статус
+#      bash deploy/ВСЁ-НА-VPS.sh проверка
+#      bash deploy/ВСЁ-НА-VPS.sh бот
+#      bash deploy/ВСЁ-НА-VPS.sh игрок hapalka228
+#      bash deploy/ВСЁ-НА-VPS.sh напрямую
+#      bash deploy/ВСЁ-НА-VPS.sh пересобрать
 # =============================================================================
 
 set -uo pipefail
@@ -30,13 +31,18 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 TARGET="${HCG_DIR:-/var/www/hcg}"
 
-# Скрипты вызываются через bash, а не напрямую: флаг исполняемости теряется
-# при распаковке архива и при копировании через облако. Раньше это выглядело
-# как «permission denied» на ровном месте.
 run_step() {
   local script="$1"; shift
   [ -f "$HERE/$script" ] || die "не найден $HERE/$script — архив неполный"
   bash "$HERE/$script" "$@"
+}
+
+work_dir() {
+  if [ -f "$TARGET/docker-compose.yml" ]; then
+    echo "$TARGET"
+  else
+    echo "$ROOT"
+  fi
 }
 
 banner() {
@@ -48,33 +54,21 @@ banner() {
   echo "  рабочий каталог: $TARGET"
 }
 
-# Архив, распакованный внутрь рабочего каталога, не даст разложить файлы:
-# каталог нельзя скопировать сам в себя. Ловим это сразу, а не на шаге 4
-# из 7 после резервного копирования — там ошибка выглядела как «не удалось
-# скопировать файлы» и ничего не объясняла.
+# Archive unpacked inside the live directory cannot copy onto itself.
 if [ "$(cd "$ROOT" && pwd -P)" = "$(cd "$TARGET" 2>/dev/null && pwd -P)" ]; then
   banner
   echo
   bad "архив распакован ВНУТРЬ рабочего каталога"
   echo
-  echo "  Так развернуть нельзя: каталог не копируется сам в себя."
   echo "  Архив должен лежать ${B}рядом${N} с папкой проекта, а не в ней."
-  echo
-  echo "  ${B}Что сделать (скопируйте целиком):${N}"
   echo
   echo "      cd /var/www"
   echo "      mkdir -p hcg-new && unzip -o ~/HCG-VPS.zip -d hcg-new"
   echo "      bash hcg-new/deploy/ВСЁ-НА-VPS.sh"
   echo
-  echo "  Ваш $TARGET и файл .env останутся нетронутыми:"
-  echo "  скрипт сам разложит в них новые файлы и сделает резервную копию."
-  echo
   exit 1
 fi
 
-# ---------------------------------------------------------------------------
-#  Состояние
-# ---------------------------------------------------------------------------
 show_status() {
   hdr "Что сейчас работает"
 
@@ -83,8 +77,8 @@ show_status() {
     return 1
   fi
 
-  local dir="$TARGET"
-  [ -f "$dir/docker-compose.yml" ] || dir="$ROOT"
+  local dir
+  dir="$(work_dir)"
 
   echo
   ( cd "$dir" && docker compose ps 2>/dev/null ) || warn "не удалось получить список контейнеров"
@@ -98,7 +92,6 @@ show_status() {
     fi
   done
 
-  # Главный признак здоровья: бот действительно подключился к Telegram.
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hcg_bot$'; then
     if docker logs --tail 80 hcg_bot 2>&1 | grep -q "started successfully"; then
       ok "бот подключён к Telegram"
@@ -120,7 +113,6 @@ show_status() {
     warn "сервер не ответил на http://127.0.0.1:3001/healthz"
   fi
 
-  # APK — не контейнер, поэтому проверяется отдельно, по файлу на диске.
   if [ -f /var/www/hcg-apk/Hapstore.apk ]; then
     ok "приложение собрано: /var/www/hcg-apk/Hapstore.apk ($(du -h /var/www/hcg-apk/Hapstore.apk | cut -f1))"
   else
@@ -129,9 +121,6 @@ show_status() {
   echo
 }
 
-# ---------------------------------------------------------------------------
-#  Шаги
-# ---------------------------------------------------------------------------
 step_server() {
   hdr "РАЗВЁРТЫВАНИЕ"
   echo "  Разложит файлы, пересоберёт образы и запустит контейнеры."
@@ -144,8 +133,6 @@ step_github() {
   hdr "ОТПРАВКА В GITHUB"
   echo "  Отправляется рабочая копия из $TARGET."
   echo
-  # Отправлять надо то, что реально развёрнуто, а не содержимое архива:
-  # иначе в репозиторий уедет версия без сделанных на сервере правок.
   if [ -f "$TARGET/package.json" ] && [ -f "$TARGET/deploy/2-GITHUB.sh" ]; then
     ( cd "$TARGET" && bash deploy/2-GITHUB.sh )
   else
@@ -157,7 +144,6 @@ step_github() {
 step_apk() {
   hdr "СБОРКА ПРИЛОЖЕНИЯ ДЛЯ ANDROID"
   echo "  Первый запуск: 10–20 минут, нужно ~4 ГБ на диске."
-  echo "  Дальнейшие сборки — 1–3 минуты."
   echo
   if [ -f "$TARGET/apk/package.json" ]; then
     ( cd "$TARGET" && bash deploy/3-APK.sh )
@@ -166,9 +152,67 @@ step_apk() {
   fi
 }
 
-# ---------------------------------------------------------------------------
-#  Режим без меню
-# ---------------------------------------------------------------------------
+step_check() {
+  hdr "ПРОВЕРКА .env И ЖИВОГО СЕРВЕРА"
+  local dir
+  dir="$(work_dir)"
+  ( cd "$dir" && bash "$HERE/hcg-check.sh" )
+}
+
+step_bot_silent() {
+  hdr "ПОЧЕМУ МОЛЧИТ БОТ"
+  local dir
+  dir="$(work_dir)"
+  ( cd "$dir" && bash "$HERE/hcg-бот-молчит.sh" )
+}
+
+step_player() {
+  local who="${1:-hapalka228}"
+  hdr "ДИАГНОСТИКА ИГРОКА @$who"
+  bash "$HERE/ДИАГНОСТИКА-ИГРОКА.sh" "$who"
+}
+
+# Bot talks to Telegram directly. Harvester stays up for /proxies.
+step_direct() {
+  hdr "БОТ НАПРЯМУЮ, ПАРСЕР ОСТАЁТСЯ"
+  local dir
+  dir="$(work_dir)"
+  cd "$dir" || die "нет каталога $dir"
+  [ -f .env ] || die "нет .env"
+
+  if curl -fsS -m 15 -o /dev/null -w '%{http_code}' https://api.telegram.org/ 2>/dev/null | grep -qE '^(200|302|404)$'; then
+    ok "с хоста Telegram отвечает"
+  else
+    warn "с хоста Telegram может быть недоступен — всё равно ставлю BOT_USE_PROXY=0"
+  fi
+
+  STAMP="$(date +%Y%m%d-%H%M%S)"
+  cp .env ".env.до-прямого-$STAMP"
+  ok "копия .env: .env.до-прямого-$STAMP"
+
+  if grep -qE '^BOT_USE_PROXY=' .env; then
+    sed -i 's|^BOT_USE_PROXY=.*|BOT_USE_PROXY=0|' .env
+  else
+    echo 'BOT_USE_PROXY=0' >> .env
+  fi
+  ok "BOT_USE_PROXY=0"
+
+  docker compose up -d --force-recreate hcg_app hcg_bot >/dev/null 2>&1
+  docker compose up -d hcg_proxy >/dev/null 2>&1
+  sleep 8
+  ok "hcg_app и hcg_bot перезапущены, hcg_proxy оставлен"
+  docker logs --tail 20 hcg_bot 2>&1 | sed 's/^/     /'
+}
+
+step_rebuild() {
+  hdr "ПЕРЕСБОРКА app + bot (парсер не трогаем)"
+  local dir
+  dir="$(work_dir)"
+  cd "$dir" || die "нет каталога $dir"
+  docker compose up -d --build hcg_app hcg_bot
+  show_status
+}
+
 if [ $# -gt 0 ]; then
   banner
   case "$1" in
@@ -176,6 +220,11 @@ if [ $# -gt 0 ]; then
     github|гитхаб|git)     step_github ;;
     apk|апк|android)       step_apk ;;
     статус|status)         show_status ;;
+    проверка|check)        step_check ;;
+    бот|bot|молчит)        step_bot_silent ;;
+    игрок|player|diag)     step_player "${2:-hapalka228}" ;;
+    напрямую|direct)       step_direct ;;
+    пересобрать|rebuild)   step_rebuild ;;
     все|всё|all)
       step_server || die "развёртывание не удалось — остальные шаги пропущены"
       step_github || warn "отправка в GitHub не удалась — продолжаю"
@@ -183,33 +232,32 @@ if [ $# -gt 0 ]; then
       show_status
       ;;
     *)
-      die "неизвестная команда «$1». Доступны: все, сервер, github, apk, статус"
+      die "неизвестная команда «$1». Доступны: все, сервер, github, apk, статус, проверка, бот, игрок, напрямую, пересобрать"
       ;;
   esac
   exit $?
 fi
 
-# ---------------------------------------------------------------------------
-#  Меню
-# ---------------------------------------------------------------------------
 while true; do
   banner
   cat <<MENU
 
-  ${B}1${N}  Развернуть игру          — разложить файлы, пересобрать, запустить
-  ${B}2${N}  Отправить в GitHub       — сохранить код в репозиторий
-  ${B}3${N}  Собрать приложение APK   — Android-приложение администратора
+  ${B}1${N}  Развернуть игру
+  ${B}2${N}  Отправить в GitHub
+  ${B}3${N}  Собрать приложение APK
   ${B}4${N}  Всё сразу (1 → 2 → 3)
   ${B}5${N}  Показать состояние
   ${B}6${N}  Логи бота
   ${B}7${N}  Логи сборщика прокси
+  ${B}8${N}  Проверка .env и сервера
+  ${B}9${N}  Почему молчит бот
+  ${B}10${N} Диагностика игрока (клетка / откат)
+  ${B}11${N} Бот напрямую, парсер оставить
+  ${B}12${N} Пересобрать app + bot
   ${B}0${N}  Выход
 
 MENU
   printf "  Выберите пункт: "
-  # Ctrl+D (или запуск без терминала) закрывает поток ввода. Без этой
-  # проверки read молча возвращает пустую строку, цикл крутится дальше и
-  # заваливает экран меню — замерено 132 000 строк за 10 секунд.
   if ! read -r choice; then
     echo
     echo "  Ввод закрыт — выхожу."
@@ -233,15 +281,24 @@ MENU
       ;;
     5) show_status ;;
     6)
-      echo "  Выход из просмотра — Ctrl+C (контейнер продолжит работать)"
+      echo "  Выход из просмотра — Ctrl+C"
       echo
       docker logs --tail 60 -f hcg_bot 2>&1 || warn "контейнер hcg_bot не найден"
       ;;
     7)
-      echo "  Выход из просмотра — Ctrl+C (контейнер продолжит работать)"
+      echo "  Выход из просмотра — Ctrl+C"
       echo
       docker logs --tail 60 -f hcg_proxy 2>&1 || warn "контейнер hcg_proxy не найден"
       ;;
+    8) step_check ;;
+    9) step_bot_silent ;;
+    10)
+      printf "  Ник игрока (Enter = hapalka228): "
+      read -r who || who=""
+      step_player "${who:-hapalka228}"
+      ;;
+    11) step_direct ;;
+    12) step_rebuild ;;
     0|q|Q|выход) echo "  До связи."; echo; exit 0 ;;
     *) warn "нет такого пункта: «$choice»" ;;
   esac

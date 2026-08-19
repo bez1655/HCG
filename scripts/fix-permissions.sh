@@ -34,10 +34,9 @@ TARGETS=(
   "deploy/1-СЕРВЕР.sh"
   "deploy/2-GITHUB.sh"
   "deploy/3-APK.sh"
-  "termux/1-СЕРВЕР.sh"
-  "termux/2-GITHUB.sh"
-  "termux/3-APK.sh"
-  "hcg-check.sh"
+  "deploy/ВСЁ-НА-VPS.sh"
+  "deploy/hcg-check.sh"
+  "deploy/hcg-бот-молчит.sh"
 )
 
 # Скрипты добавляются со временем, а список выше — ручной: ПРОКСИ.sh и
@@ -45,15 +44,13 @@ TARGETS=(
 # Дособираем всё автоматически, чтобы новый скрипт больше никогда
 # не оказался забытым.
 #
-# Каталог "." в списке обязателен: первая версия искала только в deploy,
-# termux и scripts, из-за чего hcg-бот-молчит.sh в корне проекта уехал
-# в архив без права на запуск. Проверять надо там же, где файлы лежат.
+# Auto-collect remaining .sh so a new deploy script is never forgotten.
 while IFS= read -r found; do
   case " ${TARGETS[*]} " in
-    *" $found "*) ;;                 # уже в списке
+    *" $found "*) ;;
     *) TARGETS+=("$found") ;;
   esac
-done < <(find . deploy termux scripts -maxdepth 1 -name "*.sh" -type f 2>/dev/null | sed 's|^\./||' | sort -u)
+done < <(find . deploy scripts -maxdepth 1 -name "*.sh" -type f 2>/dev/null | sed 's|^\./||' | sort -u)
 
 BROKEN=0
 FIXED=0
