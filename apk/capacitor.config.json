@@ -1,0 +1,17 @@
+{
+  "appId": "store.bez12.hcg",
+  "appName": "Hapstore",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#060412"
+    }
+  }
+}

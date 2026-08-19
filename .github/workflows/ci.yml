@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Type-check, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # Fails if package.json and package-lock.json drift apart —
+      # exactly the breakage that used to make the Docker build fail.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint:types
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Formatting
+        run: npx prettier --check .
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build client and server bundles
+        run: npm run build
+
+      - name: End-to-end tests
+        run: npx vitest run --config vitest.e2e.config.ts
+
+  bot:
+    name: Bot type-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: bot/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Fail on high/critical advisories
+        run: npm audit --audit-level=high
+
+      - name: Audit bot dependencies
+        working-directory: ./bot
+        run: npm ci && npm audit --audit-level=high
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Repository-owned scanner: same rules the pre-commit hook enforces.
+      - name: Scan working tree for credentials
+        run: node scripts/check-secrets.mjs --all
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker build -t hcg-app:ci .
+
+      - name: Build bot image
+        run: docker build -t hcg-bot:ci ./bot

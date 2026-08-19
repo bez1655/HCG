@@ -1,0 +1,4 @@
+#!/bin/sh
+# Blocks commits that contain credentials.
+# Enabled via: npm run hooks:install   (or: git config core.hooksPath .githooks)
+node scripts/check-secrets.mjs || exit 1

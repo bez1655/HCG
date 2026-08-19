@@ -1,0 +1,24 @@
+{
+  "name": "hcg-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HCG standalone Android build (Capacitor wrapper around the web client)",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "icons": "npx @capacitor/assets generate --android --assetPath resources",
+    "sync": "npm run build:web && npx cap sync android",
+    "open": "npx cap open android",
+    "apk:debug": "cd android && ./gradlew assembleDebug",
+    "apk:release": "cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.0.1",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/status-bar": "^8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/assets": "^3.0.5"
+  }
+}

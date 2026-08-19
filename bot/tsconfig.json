@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*"],
+  // Tests are run by vitest from the repository root and must never reach the
+  // production build: tsc compiles them into dist/, and a test file that
+  // imports without a .js extension fails the build outright.
+  "exclude": ["src/**/*.test.ts"]
+}

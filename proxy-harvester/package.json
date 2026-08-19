@@ -1,0 +1,21 @@
+{
+  "name": "hcg-proxy-harvester",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts",
+    "build": "tsc",
+    "once": "HARVEST_ONCE=1 tsx src/main.ts"
+  },
+  "dependencies": {
+    "https-proxy-agent": "^9.1.0",
+    "socks-proxy-agent": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

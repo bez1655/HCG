@@ -1,0 +1,21 @@
+# Normalise line endings across platforms
+* text=auto eol=lf
+
+# Binary assets: never diff or merge, and store via Git LFS when enabled
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.mp4 binary
+*.mov binary
+*.woff binary
+*.woff2 binary
+
+# Large media — enable with: git lfs install && git lfs track "*.mp4"
+# public/*.mp4 filter=lfs diff=lfs merge=lfs -text
+
+# Generated files: collapse in pull requests
+package-lock.json linguist-generated=true
+bot/package-lock.json linguist-generated=true

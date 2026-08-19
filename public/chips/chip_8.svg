@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+    <defs>
+      <!-- Base Metallic Gradients -->
+      <radialGradient id="metalGrad" cx="35%" cy="30%" r="70%">
+        <stop offset="0%" stop-color="#38444d" />
+        <stop offset="50%" stop-color="#1f2933" />
+        <stop offset="100%" stop-color="#0b0f14" />
+      </radialGradient>
+
+      <radialGradient id="sphereGrad" cx="30%" cy="25%" r="75%">
+        <stop offset="0%" stop-color="#485665" />
+        <stop offset="40%" stop-color="#212932" />
+        <stop offset="85%" stop-color="#0c1015" />
+        <stop offset="100%" stop-color="#05070a" />
+      </radialGradient>
+
+      <!-- Placeholder Neon Glow gradient (will be dynamically colored via CSS/JS or default cyber cyan/green) -->
+      <!-- Свечение фишки. Цвет подставляется на стороне приложения из
+           профиля игрока (см. src/components/ChipImage.tsx): фишка должна
+           светиться тем цветом, который человек выбрал при входе, а не
+           одинаковым зелёно-голубым у всех.
+           Значения в var(...) — запасные, на случай показа вне игры. -->
+      <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="var(--chip-glow, #00ffaa)" />
+        <stop offset="100%" stop-color="var(--chip-glow-2, #00ccff)" />
+      </linearGradient>
+
+      <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="8" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+
+      <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#000" flood-opacity="0.8" />
+      </filter>
+    </defs>
+
+    
+        <ellipse cx="256" cy="420" rx="130" ry="20" fill="none" stroke="url(#neonGlow)" stroke-width="6" filter="url(#glow)" />
+        <!-- Capsule Shell -->
+        <path d="M 130 200 C 130 90, 382 90, 382 200 L 360 320 L 256 370 L 152 320 Z" fill="url(#sphereGrad)" stroke="#30363d" stroke-width="8" />
+        <!-- Visor Band -->
+        <path d="M 140 180 Q 256 220 372 180 L 368 220 Q 256 260 144 220 Z" fill="url(#neonGlow)" filter="url(#glow)" />
+        <!-- Lower Thruster Pipes -->
+        <rect x="200" y="340" width="20" height="40" fill="#161b22" stroke="url(#neonGlow)" stroke-width="2" />
+        <rect x="292" y="340" width="20" height="40" fill="#161b22" stroke="url(#neonGlow)" stroke-width="2" />
+        <circle cx="256" cy="280" r="30" fill="#000" stroke="url(#neonGlow)" stroke-width="4" />
+        <circle cx="256" cy="280" r="15" fill="#fff" filter="url(#glow)" />
+      
+  </svg>

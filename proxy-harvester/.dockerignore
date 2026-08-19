@@ -1,0 +1,31 @@
+# Build context for the proxy harvester image.
+#
+# Same shape as bot/.dockerignore and for the same reasons: a stray local
+# node_modules would overwrite the one npm ci resolves inside the image, and
+# nothing resembling a secret may ever be baked into a layer — layers are
+# readable by anyone who can pull the image.
+
+# Dependencies and build output
+node_modules
+dist
+.git
+
+# Secrets — must never enter an image layer
+.env
+.env.*
+!.env.example
+*serviceAccount*.json
+*service-account*.json
+*credentials*.json
+*.pem
+*.key
+
+# Runtime state (lives in the mounted volume, not in the image)
+data
+proxies.json
+proxies.txt
+harvester-status.json
+
+# Misc
+*.log
+*.bak
