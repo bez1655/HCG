@@ -20,6 +20,16 @@ export interface ActiveBonus {
   receivedAt: number;
 }
 
+/** One prize the player won — kept for the personal cabinet. */
+export interface PrizeRecord {
+  at: number;
+  name: string;
+  extra?: string;
+  cellId?: number;
+  redeemed: boolean;
+  redeemedAt?: number;
+}
+
 export interface Player {
   id: string;
   /**
@@ -79,6 +89,10 @@ export interface Player {
   telegramId?: number;
   telegramUsername?: string;
   activeBonus?: ActiveBonus | null;
+  /** Personal prize cabinet. Not shown to other players. */
+  prizeLog?: PrizeRecord[];
+  /** Last “you still have a roll” reminder. */
+  lastTurnReminderAt?: number;
 }
 
 export interface Cell {

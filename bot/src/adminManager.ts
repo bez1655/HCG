@@ -5,20 +5,28 @@ import { config } from "./config.js";
 
 const ADMIN_LIST_FILE = path.join(config.dataDir, "admin_list.json");
 
+function formatHandle(username: string): string {
+  const formatted = username.toLowerCase().trim();
+  return formatted.startsWith("@") ? formatted : `@${formatted}`;
+}
+
 export class AdminManager {
   private adminUsernames: Set<string> = new Set();
+  /** Handle from TELEGRAM_ADMIN_USERNAME — cannot be removed via /del_admin. */
+  private bootstrap: string | null = null;
 
   constructor() {
     this.loadAdmins();
   }
 
   private loadAdmins() {
-    // Bootstrap administrator comes from configuration only. Hardcoding a
-    // personal handle previously granted that account admin rights in every
-    // copy of this source and exposed the identity publicly.
+    // Bootstrap administrator comes from configuration only. Never hardcode a
+    // personal handle: that granted rights in every copy and leaked identity.
+    this.bootstrap = null;
     const envAdmin = config.adminUsername?.toLowerCase().trim();
     if (envAdmin) {
-      this.adminUsernames.add(envAdmin.startsWith("@") ? envAdmin : `@${envAdmin}`);
+      this.bootstrap = formatHandle(envAdmin);
+      this.adminUsernames.add(this.bootstrap);
     }
 
     if (fs.existsSync(ADMIN_LIST_FILE)) {
@@ -68,29 +76,37 @@ export class AdminManager {
 
   public isAdmin(username?: string): boolean {
     if (!username) return false;
-    const formatted = username.toLowerCase().trim();
-    const withAt = formatted.startsWith("@") ? formatted : `@${formatted}`;
-    return this.adminUsernames.has(withAt);
+    return this.adminUsernames.has(formatHandle(username));
+  }
+
+  public isValidHandle(username: string): boolean {
+    return /^@[a-z0-9_]{5,32}$/.test(formatHandle(username));
   }
 
   public addAdmin(username: string): boolean {
-    const formatted = username.toLowerCase().trim();
-    const withAt = formatted.startsWith("@") ? formatted : `@${formatted}`;
-    this.adminUsernames.add(withAt);
+    if (!this.isValidHandle(username)) return false;
+    this.adminUsernames.add(formatHandle(username));
     this.saveAdmins();
     return true;
   }
 
-  public removeAdmin(username: string): boolean {
-    const formatted = username.toLowerCase().trim();
-    const withAt = formatted.startsWith("@") ? formatted : `@${formatted}`;
-    const result = this.adminUsernames.delete(withAt);
+  public removeAdmin(username: string): "removed" | "missing" | "bootstrap" {
+    const withAt = formatHandle(username);
+    if (this.bootstrap && withAt === this.bootstrap) return "bootstrap";
+    if (!this.adminUsernames.has(withAt)) return "missing";
+    this.adminUsernames.delete(withAt);
     this.saveAdmins();
-    return result;
+    return "removed";
   }
 
   public getAdmins(): string[] {
     return Array.from(this.adminUsernames);
+  }
+
+  public describeAdmins(): string {
+    return this.getAdmins()
+      .map((h) => (this.bootstrap && h === this.bootstrap ? `${h} (основной, из .env)` : h))
+      .join("\n");
   }
 
   public middleware() {

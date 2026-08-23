@@ -131,7 +131,7 @@ export default function AdminConsole({
    * Число рядом с настройкой отвечает на вопрос «а кого я сейчас не вижу?» —
    * иначе непонятно, работает правило или нет.
    */
-  const hideHours = gameState.hideTokensAfterHours ?? 24;
+  const hideHours = gameState.hideTokensAfterHours ?? 5;
   const hiddenCount = gameState.players.filter(
     (p) => p.role === "player" && !isTokenVisible(p, hideHours)
   ).length;
@@ -161,7 +161,7 @@ export default function AdminConsole({
 
   // Player editing dictionary
   const [playerEdits, setPlayerEdits] = useState<{
-    [id: string]: { cell: number; name: string; color: string; chipImage: string };
+    [id: string]: { cell: number; name: string; color: string; chipImage: string; dirty?: boolean };
   }>({});
   const [_passwords, setPasswords] = useState<{ [id: string]: string }>({});
 
@@ -181,19 +181,28 @@ export default function AdminConsole({
   // Calibration tool state
   const [_calCellId, _setCalCellId] = useState<number>(0);
 
-  const initPlayerEdit = (p: Player) => {
-    if (!playerEdits[p.id]) {
-      setPlayerEdits((prev) => ({
-        ...prev,
-        [p.id]: {
-          cell: p.cell,
-          name: p.name,
-          color: p.color,
-          chipImage: p.chipImage || "/chips/chip_1.svg",
-        },
-      }));
-    }
-  };
+  // Keep the table in sync with the server unless the admin is mid-edit.
+  // Calling setState from render used to freeze the row on the first snapshot.
+  useEffect(() => {
+    setPlayerEdits((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const p of gameState.players) {
+        const e = next[p.id];
+        const chip = p.chipImage || "/chips/chip_1.svg";
+        if (!e) {
+          next[p.id] = { cell: p.cell, name: p.name, color: p.color, chipImage: chip };
+          changed = true;
+        } else if (!e.dirty) {
+          if (e.cell !== p.cell || e.name !== p.name || e.color !== p.color || e.chipImage !== chip) {
+            next[p.id] = { cell: p.cell, name: p.name, color: p.color, chipImage: chip };
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [gameState.players]);
 
   const handlePlayerEditChange = (
     id: string,
@@ -211,6 +220,7 @@ export default function AdminConsole({
       [id]: {
         ...current,
         [field]: val,
+        dirty: true,
       },
     }));
   };
@@ -226,6 +236,7 @@ export default function AdminConsole({
         color: edit.color,
         chipImage: edit.chipImage,
       });
+      setPlayerEdits((prev) => ({ ...prev, [pId]: { ...edit, dirty: false } }));
     }
   };
 

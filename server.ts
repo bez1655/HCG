@@ -15,7 +15,17 @@ import { pickAlias, publicName } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
 // Правило видимости применяет клиент (доска и админка); серверу нужны только
 // проверка настройки и значение по умолчанию.
-import { normaliseHideAfterHours, DEFAULT_HIDE_AFTER_HOURS } from "./src/game/presence";
+import { normaliseHideAfterHours, DEFAULT_HIDE_AFTER_HOURS, isTokenVisible } from "./src/game/presence";
+import {
+  isQuietHours,
+  playersDueReminder,
+  reminderText,
+  buildDailyReport,
+  shouldSendDailyReport,
+  DEFAULT_QUIET_START,
+  DEFAULT_QUIET_END,
+  DEFAULT_REPORT_HOUR,
+} from "./src/game/schedule";
 import { formatRollReport, RollRecord } from "./src/game/rollReport";
 import { buildTurnOutcome, formatTurnOutcomeForTelegram } from "./src/game/turnOutcome";
 import {
@@ -33,6 +43,7 @@ import {
   verifySessionToken,
   decryptLegacyPass,
 } from "./src/auth/session";
+import { isTelegramAdminHandle } from "./src/auth/telegramAdmins";
 import {
   initTelegram,
   sendMessage as sendTelegramMessage,
@@ -232,10 +243,28 @@ function takenAliases(): string[] {
   return gameState.players.map((p) => p.alias).filter((a): a is string => Boolean(a));
 }
 
+
 /** Имя игрока, которое разрешено показать остальным участникам. */
 function shownName(player: { alias?: string; name?: string }): string {
   return publicName(player);
 }
+
+/**
+ * Журнал читают игроки. Хендл администратора туда не должен попадать:
+ * иначе любой участник узнает личный Telegram организатора.
+ */
+function maskAdminIdentityInLog(message: string): string {
+  return message
+    .replace(/через Telegram Bot\s+@?[A-Za-z0-9_]+/gi, "администратором")
+    .replace(/одобрено в Telegram:\s+@?[A-Za-z0-9_]+/gi, "одобрено администратором")
+    .replace(/\s*\(@[A-Za-z0-9_]{3,32}\)/g, "")
+    .replace(/\s*\(через Telegram Bot [^)]+\)/gi, "");
+}
+
+function logsForPlayers(logs: GameLog[]): GameLog[] {
+  return logs.map((l) => ({ ...l, message: maskAdminIdentityInLog(l.message) }));
+}
+
 
 /** Игроки, названные администратором в сообщении чата. */
 function findMentionedPlayers(text: string): Player[] {
@@ -255,7 +284,30 @@ function maskPlayer(p: Player): Player {
   const masked: Player = { ...p, name: publicName(p) };
   delete masked.telegramId;
   delete masked.telegramUsername;
+  delete masked.prizeLog;
+  delete masked.lastTurnReminderAt;
   return masked;
+}
+
+function pushPrize(player: Player, bonus: NonNullable<Player["activeBonus"]>): void {
+  if (!player.prizeLog) player.prizeLog = [];
+  player.prizeLog.push({
+    at: bonus.receivedAt,
+    name: bonus.name,
+    extra: bonus.extra,
+    cellId: bonus.cellId,
+    redeemed: false,
+  });
+}
+
+function markPrizeRedeemed(player: Player, label: string): void {
+  if (!player.prizeLog) return;
+  const open = [...player.prizeLog].reverse().find((r) => !r.redeemed);
+  if (open) {
+    open.redeemed = true;
+    open.redeemedAt = Date.now();
+    if (label) open.extra = open.extra || label;
+  }
 }
 
 /**
@@ -300,7 +352,7 @@ const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-08-19.1";
+const SERVER_BUILD = "2026-08-23.1";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -836,6 +888,7 @@ function approveTurn(
 
   if (player.activeBonus && confirmBonusUse) {
     const usedBonus = player.activeBonus;
+    markPrizeRedeemed(player, usedBonus.extra || usedBonus.name);
     player.activeBonus = null;
     addLog({
       id: "bonus_use_" + Date.now(),
@@ -862,6 +915,7 @@ function approveTurn(
   player.turnApprovedUntil = Date.now() + LEGACY_WINDOW_MS;
   player.turnsApproved = turns;
   player.turnBatchStartedAt = Date.now();
+  player.lastTurnReminderAt = Date.now();
   player.turnRequested = false;
   player.turnsRequested = undefined;
   if (gameState.turnRequestUserId === player.id) {
@@ -900,8 +954,7 @@ function approveTurn(
   addLog({
     id: "approve_" + Date.now(),
     message:
-      `👑 Игроку ${shownName(player)} одобрено ${turns} ${pluralizeTurns(turns)} (без ограничения по времени)` +
-      `${approvedBy ? ` (${approvedBy})` : ""}.`,
+      `👑 Игроку ${shownName(player)} одобрено ${turns} ${pluralizeTurns(turns)} (без ограничения по времени).`,
     timestamp: new Date().toLocaleTimeString(),
     type: "admin",
   });
@@ -968,8 +1021,7 @@ function rejectTurn(playerId: string, rejectedBy?: string): ApproveTurnResult {
   addLog({
     id: "reject_" + Date.now(),
     message:
-      `❌ Запрос хода для игрока ${shownName(player)} отклонен` +
-      `${rejectedBy ? ` (${rejectedBy})` : " администратором"}.`,
+      `❌ Запрос хода для игрока ${shownName(player)} отклонен администратором.`,
     timestamp: new Date().toLocaleTimeString(),
     type: "admin",
   });
@@ -1061,7 +1113,7 @@ async function registerApprovedPlayer(
 
   addLog({
     id: "admin_reg_" + Date.now(),
-    message: `➕ Игрок ${newPlayer.alias} зарегистрирован${options.approvedBy ? ` (${options.approvedBy})` : ""}.`,
+    message: `➕ Игрок ${newPlayer.alias} зарегистрирован.`,
     timestamp: new Date().toLocaleTimeString(),
     type: "admin",
   });
@@ -1245,6 +1297,9 @@ async function start() {
       picked.state.cells && picked.state.cells.length === 65
         ? { ...gameState, ...picked.state }
         : { ...gameState, ...picked.state, cells: generateDefaultCells() };
+    if (gameState.hideTokensAfterHours === 24) {
+      gameState.hideTokensAfterHours = DEFAULT_HIDE_AFTER_HOURS;
+    }
     log.info("Loaded game state", {
       source: picked.source,
       reason: picked.reason,
@@ -1418,6 +1473,8 @@ async function start() {
   function metaSlice() {
     return {
       schemaVersion: gameState.schemaVersion,
+      revision: gameState.revision,
+      updatedAt: gameState.updatedAt,
       currentPlayerId: gameState.currentPlayerId,
       turnRequestUserId: gameState.turnRequestUserId,
       turnStatus: gameState.turnStatus,
@@ -1471,6 +1528,8 @@ async function start() {
           patch.chatMessages = forAdmin
             ? gameState.chatMessages
             : gameState.chatMessages.map(maskChatMessage);
+        } else if (slice === "logs") {
+          patch.logs = forAdmin ? gameState.logs : logsForPlayers(gameState.logs);
         } else patch[slice] = (gameState as any)[slice];
       }
       return patch;
@@ -1648,6 +1707,7 @@ async function start() {
         activeBonus: p.activeBonus,
         // telegramId / telegramUsername intentionally omitted (personal data)
       })),
+      logs: logsForPlayers(state.logs || []),
     };
   }
 
@@ -2005,7 +2065,7 @@ async function start() {
        * журнал читают все участники, а заявка отклонена и в игре человека
        * нет. Кто именно, администратор видит в боте.
        */
-      message: `🚫 Заявка на регистрацию отклонена (${parsed.data.admin || "администратор"}).`,
+      message: `🚫 Заявка на регистрацию отклонена администратором.`,
       timestamp: new Date().toLocaleTimeString(),
       type: "admin",
     });
@@ -2052,7 +2112,20 @@ async function start() {
         if (player) player.telegramId = tgId;
       }
 
+      const telegramAdmin = isTelegramAdminHandle(handle, DATA_DIR, telegramConfig.adminUsername);
+
       if (!player) {
+        // Bot administrators may open the Mini App without a player chip.
+        if (telegramAdmin) {
+          return res.json({
+            success: true,
+            id: ADMIN_PLAYER_ID,
+            name: "Admin",
+            role: "admin",
+            color: "#FF00FF",
+            token: issueSessionToken(ADMIN_PLAYER_ID, "admin"),
+          });
+        }
         return res.status(404).json({
           error: "Вы ещё не зарегистрированы. Запросите регистрацию в боте командой /register.",
           needsRegistration: true,
@@ -2070,14 +2143,17 @@ async function start() {
       saveState();
       broadcastSlices("players");
 
+      const sessionRole: "admin" | "player" =
+        telegramAdmin || player.role === "admin" ? "admin" : "player";
+
       return res.json({
         success: true,
         id: player.id,
         name: player.name,
-        role: player.role === "admin" ? "admin" : "player",
+        role: sessionRole,
         color: player.color,
         chipImage: player.chipImage,
-        token: issueSessionToken(player.id, player.role === "admin" ? "admin" : "player"),
+        token: issueSessionToken(player.id, sessionRole),
       });
     }
   );
@@ -2200,7 +2276,7 @@ async function start() {
     addLog({
       id: "dm_" + Date.now(),
       // В журнале — псевдоним: журнал читают все участники.
-      message: `✉️ Администратор написал игроку ${shownName(player)}${admin ? ` (${admin})` : ""}.`,
+      message: `✉️ Администратор написал игроку ${shownName(player)}.`,
       timestamp: new Date().toLocaleTimeString(),
       type: "admin",
     });
@@ -2248,7 +2324,7 @@ async function start() {
 
     addLog({
       id: "broadcast_" + Date.now(),
-      message: `📢 Администратор написал всем игрокам (${sent} из ${recipients.length})${admin ? ` (${admin})` : ""}.`,
+      message: `📢 Администратор написал всем игрокам (${sent} из ${recipients.length}).`,
       timestamp: new Date().toLocaleTimeString(),
       type: "admin",
     });
@@ -2290,6 +2366,55 @@ async function start() {
       text: formatPlayerHistoryText(history),
       html: formatPlayerHistoryHtml(history),
     });
+  });
+
+  app.get("/api/admin/player-prizes", requireInternalAuth, (req, res) => {
+    const raw = typeof req.query.target === "string" ? req.query.target : "";
+    const parsed = validate(botPlayerHistorySchema, { target: raw || " " });
+    const target = (typeof req.query.target === "string" ? req.query.target : "").trim();
+    if (!target) return res.status(400).json({ error: "укажите игрока" });
+    const player = findPlayerByTarget(gameState.players, target);
+    if (!player) return res.status(404).json({ error: `Игрок «${target}» не найден.` });
+    const log = player.prizeLog || [];
+    const lines = log.length
+      ? log
+          .slice()
+          .reverse()
+          .map((r) => {
+            const when = new Date(r.at).toLocaleString("ru-RU");
+            const st = r.redeemed ? "выдан" : "ждёт выдачи";
+            return `• ${escapeHtml(r.extra || r.name)} — ${st} (${escapeHtml(when)})`;
+          })
+          .join("\n")
+      : "Пока пусто.";
+    const html =
+      `🎁 <b>Кабинет призов</b> ${escapeHtml(shownName(player))}\n` +
+      (player.activeBonus
+        ? `\n⏳ Сейчас: <b>${escapeHtml(player.activeBonus.extra || player.activeBonus.name)}</b>`
+        : "") +
+      `\n\n${lines}`;
+    void parsed;
+    return res.json({ success: true, html, prizes: log, active: player.activeBonus ?? null });
+  });
+
+  app.get("/api/admin/daily-report", requireInternalAuth, (req, res) => {
+    const players = gameState.players.filter((p) => p.role === "player");
+    const now = Date.now();
+    const hide = gameState.hideTokensAfterHours ?? DEFAULT_HIDE_AFTER_HOURS;
+    const html = buildDailyReport({
+      playersTotal: players.length,
+      online: players.filter((p) => p.isOnline).length,
+      awaitingTurn: players.filter((p) => p.turnRequested).length,
+      approvedTurns: players.reduce((s, p) => s + turnsLeftFor(p), 0),
+      unredeemedPrizes: players
+        .filter((p) => p.activeBonus)
+        .map((p) => ({
+          name: shownName(p),
+          prize: p.activeBonus!.extra || p.activeBonus!.name,
+        })),
+      idleHidden: players.filter((p) => !isTokenVisible(p, hide, now)).length,
+    });
+    return res.json({ success: true, html });
   });
 
   app.post(
@@ -2434,16 +2559,25 @@ async function start() {
      * обход publicGameState(). Игрок получал Telegram-хендлы всех остальных
      * ещё до первого хода. Администратору по-прежнему нужен полный вид.
      */
-    socket.emit(
-      "state:update",
-      isAdmin
-        ? gameState
-        : {
-            ...gameState,
-            players: gameState.players.map(maskPlayer),
-            chatMessages: gameState.chatMessages.map(maskChatMessage),
-          }
-    );
+    const emitFullState = () => {
+      socket.emit(
+        "state:update",
+        isAdmin
+          ? gameState
+          : {
+              ...gameState,
+              players: gameState.players.map((p) => {
+                const m = maskPlayer(p);
+                if (p.id === authPlayerId) m.prizeLog = p.prizeLog;
+                return m;
+              }),
+              chatMessages: gameState.chatMessages.map(maskChatMessage),
+              logs: logsForPlayers(gameState.logs),
+            }
+      );
+    };
+    emitFullState();
+    socket.on("client:resync", emitFullState);
 
     // Player/Admin reconnects — identity is taken from the verified session.
     socket.on("player:online", () => {
@@ -2471,7 +2605,7 @@ async function start() {
       // can no longer impersonate another player or forge the admin badge.
       const sender = gameState.players.find((p) => p.id === authPlayerId);
       // Псевдоним, а не хендл: чат читают все участники.
-      const senderName = isAdmin ? "Admin" : sender ? shownName(sender) : "Игрок";
+      const senderName = isAdmin ? "Администратор" : sender ? shownName(sender) : "Игрок";
       const senderColor = isAdmin ? "#FF00FF" : (sender?.color ?? "#39FF14");
 
       const chatMsg: ChatMessage = {
@@ -2768,6 +2902,7 @@ async function start() {
           cellId: 64,
           receivedAt: Date.now(),
         };
+        pushPrize(player, player.activeBonus);
 
         report.finished = true;
         report.awardedBonus = player.activeBonus;
@@ -2844,6 +2979,7 @@ async function start() {
             cellId: cell.id,
             receivedAt: Date.now(),
           };
+          pushPrize(player, player.activeBonus);
 
           report.awardedBonus = player.activeBonus;
           report.replacedBonus = previousBonus;
@@ -3525,6 +3661,7 @@ async function start() {
       const player = gameState.players.find((p) => p.id === pId);
       if (player && player.activeBonus) {
         const usedBonus = player.activeBonus;
+        markPrizeRedeemed(player, usedBonus.extra || usedBonus.name);
         player.activeBonus = null;
 
         addLog({
@@ -3624,6 +3761,50 @@ async function start() {
     if (gameState.players.length > 0) createSnapshot("scheduled");
   }, SNAPSHOT_INTERVAL_MS);
   backupTimer.unref?.();
+
+  const quietStart = Number(process.env.TELEGRAM_QUIET_START ?? DEFAULT_QUIET_START);
+  const quietEnd = Number(process.env.TELEGRAM_QUIET_END ?? DEFAULT_QUIET_END);
+  const reportHour = Number(process.env.TELEGRAM_REPORT_HOUR ?? DEFAULT_REPORT_HOUR);
+  let lastReportDay: string | null = null;
+
+  const shopTimer = setInterval(() => {
+    const now = Date.now();
+    if (!isQuietHours(now, quietStart, quietEnd)) {
+      const due = playersDueReminder(gameState.players, now);
+      for (const p of due) {
+        const live = gameState.players.find((x) => x.id === p.id);
+        if (!live) continue;
+        const left = turnsLeftFor(live);
+        if (left <= 0) continue;
+        live.lastTurnReminderAt = now;
+        void sendTelegramMessage(live.telegramId || live.name, reminderText(left));
+      }
+      if (due.length) saveState();
+    }
+
+    const report = shouldSendDailyReport(lastReportDay, now, reportHour);
+    lastReportDay = report.dayKey;
+    if (report.send) {
+      const players = gameState.players.filter((p) => p.role === "player");
+      const hide = gameState.hideTokensAfterHours ?? DEFAULT_HIDE_AFTER_HOURS;
+      void sendTelegramMessageToAdmin(
+        buildDailyReport({
+          playersTotal: players.length,
+          online: players.filter((p) => p.isOnline).length,
+          awaitingTurn: players.filter((p) => p.turnRequested).length,
+          approvedTurns: players.reduce((s, p) => s + turnsLeftFor(p), 0),
+          unredeemedPrizes: players
+            .filter((p) => p.activeBonus)
+            .map((p) => ({
+              name: shownName(p),
+              prize: p.activeBonus!.extra || p.activeBonus!.name,
+            })),
+          idleHidden: players.filter((p) => !isTokenVisible(p, hide, now)).length,
+        })
+      );
+    }
+  }, 60_000);
+  shopTimer.unref?.();
 
   /*
    * Таймер, сжигавший неиспользованные ходы, удалён.

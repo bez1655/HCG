@@ -17,7 +17,7 @@
  */
 
 /** Сколько часов бездействия скрывают фишку по умолчанию. */
-export const DEFAULT_HIDE_AFTER_HOURS = 24;
+export const DEFAULT_HIDE_AFTER_HOURS = 5;
 
 /** Разрешённые границы настройки: от часа до года. 0 — никогда не прятать. */
 export const MIN_HIDE_AFTER_HOURS = 1;

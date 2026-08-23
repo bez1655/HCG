@@ -23,6 +23,8 @@ import {
   Volume2,
   Music,
   Gift,
+  Search,
+  Award,
   Menu,
   BookOpen,
   HelpCircle,
@@ -42,6 +44,8 @@ import ActiveTurnIndicator from "./ActiveTurnIndicator";
 import StatsSidebar from "./StatsSidebar";
 import { turnsLeft, pluralizeTurns } from "../game/rules";
 import { isTokenVisible } from "../game/presence";
+import { describeEffect } from "../game/cellGuide";
+import PlayerCabinet from "./PlayerCabinet";
 
 interface BoardViewProps {
   gameState: GameState;
@@ -123,6 +127,8 @@ export default function BoardView({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPlayersDrawerOpen, setIsPlayersDrawerOpen] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [isCabinetOpen, setIsCabinetOpen] = useState(false);
+  const [playerSearch, setPlayerSearch] = useState("");
 
   // Audio Settings states
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
@@ -190,7 +196,24 @@ export default function BoardView({
     }
   }, [gameState?.players]);
 
-  // Synchronize visual cell ids to step them sequentially through the board
+  // Walk tokens one cell at a time. Snap when the gap is large (admin move)
+  // or when the WebView wakes: Telegram/Android freeze setInterval and the
+  // chip stays on the old cell until the screen remounts.
+  const snapVisualToServer = () => {
+    setVisualCells((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const player of gameState.players) {
+        if (player.role !== "player") continue;
+        if (next[player.id] !== player.cell) {
+          next[player.id] = player.cell;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  };
+
   useEffect(() => {
     if (!gameState) return;
 
@@ -198,11 +221,15 @@ export default function BoardView({
       const next = { ...prev };
       let changed = false;
       for (const player of gameState.players) {
-        if (player.role === "player") {
-          if (next[player.id] === undefined) {
-            next[player.id] = player.cell;
-            changed = true;
-          }
+        if (player.role !== "player") continue;
+        if (next[player.id] === undefined) {
+          next[player.id] = player.cell;
+          changed = true;
+          continue;
+        }
+        if (Math.abs(next[player.id] - player.cell) > 6) {
+          next[player.id] = player.cell;
+          changed = true;
         }
       }
       return changed ? next : prev;
@@ -235,7 +262,17 @@ export default function BoardView({
       });
     }, 350);
 
-    return () => clearInterval(timer);
+    const wake = () => {
+      if (document.visibilityState === "visible") snapVisualToServer();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+    };
   }, [gameState?.players]);
 
   // Auto-clear rolled number after 5 seconds
@@ -554,6 +591,18 @@ export default function BoardView({
                     <span>СПРАВКА</span>
                   </button>
 
+                  <button
+                    onClick={() => {
+                      playSound("click");
+                      setIsMenuOpen(false);
+                      setIsCabinetOpen(true);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#00ffaa]/15 hover:text-[#00ffaa] transition text-left cursor-pointer font-bold tracking-wider"
+                  >
+                    <Award size={14} className="text-[#00ffaa]" />
+                    <span>МОИ ПРИЗЫ</span>
+                  </button>
+
                   {/* 4. НАСТРОЙКИ */}
                   <button
                     onClick={() => {
@@ -687,8 +736,28 @@ export default function BoardView({
               </div>
 
               {/* Connected Player Cards */}
+              <div className="relative">
+                <Search size={12} className="absolute left-2 top-2.5 text-[#00ffaa]/70" />
+                <input
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                  placeholder="Найти игрока…"
+                  className="w-full bg-black border border-[#00ffaa]/30 rounded-lg pl-7 pr-2 py-1.5 text-[11px] text-white font-mono focus:outline-none"
+                />
+              </div>
+
               <div className="flex-1 overflow-y-auto space-y-3 scrollbar-none pr-1">
-                {sortedPlayers.map((p, _idx) => {
+                {sortedPlayers
+                  .filter((p) => {
+                    const q = playerSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      p.name.toLowerCase().includes(q) ||
+                      (p.alias || "").toLowerCase().includes(q) ||
+                      String(p.cell).includes(q)
+                    );
+                  })
+                  .map((p, _idx) => {
                   const _isOnline = p.isOnline !== false;
                   const isCurrentTurn = gameState.currentPlayerId === p.id;
                   const playerCellObj = gameState.cells.find((c) => c.id === p.cell);
@@ -1329,7 +1398,8 @@ export default function BoardView({
                 {selectedCell.name}
               </div>
               <div className="bg-white/5 p-3 rounded-lg border border-white/5 text-[11px] leading-relaxed text-gray-300 font-sans">
-                {selectedCell.description || "Стандартный сектор игрового пространства."}
+                <div className="text-[#00ffaa] font-bold mb-1">{describeEffect(selectedCell)}</div>
+                {selectedCell.description || "Обычная клетка."}
               </div>
               <div className="flex justify-between text-[10px] text-white/40 font-mono mt-1 pt-2 border-t border-white/5">
                 <span>ТИП: {selectedCell.type}</span>
@@ -1679,6 +1749,15 @@ export default function BoardView({
             </div>
           </div>
         </div>
+      )}
+
+      {isCabinetOpen && (
+        <PlayerCabinet
+          me={me}
+          gameState={gameState}
+          prizes={me?.prizeLog || []}
+          onClose={() => setIsCabinetOpen(false)}
+        />
       )}
     </div>
   );

@@ -376,11 +376,14 @@ const ADMIN_HELP_TEXT =
   "   по хендлу: <code>/msg @ivan Ваш приз готов</code>\n" +
   "   псевдоним из двух слов — в кавычках\n" +
   "/all &lt;текст&gt; — написать всем игрокам\n" +
-  "/proxies — рабочие прокси с парсера\n\n" +
+  "/proxies — рабочие прокси с парсера\n" +
+  "/prizes &lt;кого&gt; — кабинет призов\n" +
+  "/report — отчёт за день\n\n" +
   "<b>Журнал и администраторы</b>\n" +
   "/admin_logs [поиск] — журнал игры\n" +
   "/set_admin @username — добавить администратора\n" +
-  "/list_admins — список администраторов\n" +
+  "/del_admin @username — снять администратора\n" +
+  "/list_admins — список (только вам)\n" +
   "/reload_admins — перечитать список\n\n" +
   "<b>Общие</b>\n" +
   "/start · /play · /help\n\n" +
@@ -652,13 +655,45 @@ bot.command("set_admin", adminManager.middleware(), async (ctx) => {
     return ctx.reply("Использование: /set_admin @username");
   }
   const newAdmin = parts[1].trim();
+  if (!adminManager.isValidHandle(newAdmin)) {
+    return ctx.reply("Нужен настоящий Telegram-хендл: /set_admin @username");
+  }
   adminManager.addAdmin(newAdmin);
-  return ctx.reply(
-    `✅ Администратор <b>${escapeHtml(newAdmin)}</b> добавлен в доверенный список!`,
-    {
-      parse_mode: "HTML",
+  const handle = newAdmin.startsWith("@") ? newAdmin : `@${newAdmin}`;
+  const chatId = chatIdFor(handle);
+  if (chatId) {
+    try {
+      await asyncQueue.sendMessage(
+        chatId,
+        "👑 Вас назначили администратором HCG. Команды: /help"
+      );
+    } catch {
+      /* they may have blocked the bot */
     }
+  }
+  return ctx.reply(
+    `✅ Администратор <b>${escapeHtml(handle)}</b> добавлен.\n` +
+      `<i>Игрокам этот хендл не показывается. Список виден только админам: /list_admins</i>` +
+      (chatId ? "" : "\n⚠️ Человек ещё не писал боту /start — команды дойдут после первого сообщения."),
+    { parse_mode: "HTML" }
   );
+});
+
+bot.command("del_admin", adminManager.middleware(), async (ctx) => {
+  const parts = ctx.message.text.split(" ");
+  if (parts.length < 2) {
+    return ctx.reply("Использование: /del_admin @username");
+  }
+  const result = adminManager.removeAdmin(parts[1].trim());
+  if (result === "bootstrap") {
+    return ctx.reply(
+      "Основного администратора из .env снять командой нельзя. Смените TELEGRAM_ADMIN_USERNAME на сервере."
+    );
+  }
+  if (result === "missing") {
+    return ctx.reply("Этого хендла нет в списке администраторов.");
+  }
+  return ctx.reply("Администратор снят. Список: /list_admins");
 });
 
 /**
@@ -896,20 +931,50 @@ bot.command("history", adminManager.middleware(), async (ctx) => {
 });
 
 // Admin Command /list_admins
+bot.command("prizes", adminManager.middleware(), async (ctx) => {
+  const target = ctx.message.text.replace(/^\/prizes(@\S+)?\s*/i, "").trim();
+  if (!target) {
+    return ctx.reply("Использование: /prizes <@хендл или Псевдоним>");
+  }
+  try {
+    const res = await internalFetch(`/api/admin/player-prizes?target=${encodeURIComponent(target)}`);
+    const data = (await res.json()) as { success?: boolean; html?: string; error?: string };
+    if (!res.ok || !data.success) {
+      return ctx.reply(`❌ ${escapeHtml(data.error || "нет данных")}`, { parse_mode: "HTML" });
+    }
+    return ctx.reply(data.html || "Пусто", { parse_mode: "HTML" });
+  } catch (e: any) {
+    return ctx.reply(`⚠️ ${e.message}`);
+  }
+});
+
+bot.command("report", adminManager.middleware(), async (ctx) => {
+  try {
+    const res = await internalFetch("/api/admin/daily-report");
+    const data = (await res.json()) as { success?: boolean; html?: string; error?: string };
+    if (!res.ok || !data.success) {
+      return ctx.reply("❌ Не удалось собрать отчёт");
+    }
+    return ctx.reply(data.html || "Пусто", { parse_mode: "HTML" });
+  } catch (e: any) {
+    return ctx.reply(`⚠️ ${e.message}`);
+  }
+});
+
 bot.command("list_admins", adminManager.middleware(), async (ctx) => {
-  const admins = adminManager.getAdmins();
-  return ctx.reply(`👑 <b>Список администраторов:</b>\n${escapeHtml(admins.join("\n"))}`, {
-    parse_mode: "HTML",
-  });
+  return ctx.reply(
+    `👑 <b>Список администраторов</b>\n<i>Виден только вам. Игрокам не отправляется.</i>\n\n${escapeHtml(adminManager.describeAdmins())}`,
+    { parse_mode: "HTML" }
+  );
 });
 
 // Admin Command /reload_admins
 bot.command("reload_admins", adminManager.middleware(), async (ctx) => {
   adminManager.reloadAdmins();
-  const admins = adminManager.getAdmins();
-  return ctx.reply(`🔄 <b>Список администраторов обновлен:</b>\n${escapeHtml(admins.join("\n"))}`, {
-    parse_mode: "HTML",
-  });
+  return ctx.reply(
+    `🔄 <b>Список обновлён</b>\n\n${escapeHtml(adminManager.describeAdmins())}`,
+    { parse_mode: "HTML" }
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -313,6 +313,13 @@ export default function App() {
       });
     });
 
+    const askResync = () => {
+      if (document.visibilityState === "hidden") return;
+      if (newSocket.connected) newSocket.emit("client:resync");
+    };
+    document.addEventListener("visibilitychange", askResync);
+    window.addEventListener("focus", askResync);
+
     // Authoritative dice result from the server.
     newSocket.on("roll:result", (data: { steps: number }) => {
       if (typeof data?.steps === "number") setPendingRoll(data.steps);

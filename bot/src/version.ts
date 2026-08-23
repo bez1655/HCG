@@ -8,7 +8,7 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-08-19.2";
+export const BUILD = "2026-08-23.1";
 export const FEATURES = [
   "self-registration button",
   "password-free Telegram entry",
@@ -34,4 +34,5 @@ export const FEATURES = [
   "admin /proxies from harvester",
   "bot uses direct Telegram; harvester stays",
   "boot prefers newer disk over stale Firestore",
+  "5h idle token hide, turn reminders, quiet hours, daily report, prize cabinet",
 ] as const;

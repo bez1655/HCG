@@ -39,7 +39,7 @@ describe("настройка порога", () => {
   });
 
   it("округляет дробное вниз", () => {
-    expect(normaliseHideAfterHours(24.9)).toBe(24);
+    expect(normaliseHideAfterHours(5.9)).toBe(5);
   });
 });
 
