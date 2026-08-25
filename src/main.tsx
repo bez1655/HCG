@@ -1,10 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import CrashGuard from "./components/CrashGuard.tsx";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <CrashGuard area="app">
+      <App />
+    </CrashGuard>
   </StrictMode>
 );

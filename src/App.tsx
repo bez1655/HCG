@@ -290,22 +290,40 @@ export default function App() {
 
     setSocket(newSocket);
 
+    const applyState = (updatedState: GameState | null | undefined) => {
+      if (!updatedState || typeof updatedState !== "object") return;
+      const safe: GameState = {
+        ...updatedState,
+        players: Array.isArray(updatedState.players) ? updatedState.players : [],
+        cells: Array.isArray(updatedState.cells) ? updatedState.cells : [],
+        logs: Array.isArray(updatedState.logs) ? updatedState.logs : [],
+        chatMessages: Array.isArray(updatedState.chatMessages) ? updatedState.chatMessages : [],
+      };
+      setGameState((prev) => {
+        const incoming = safe.revision ?? 0;
+        const have = prev?.revision ?? 0;
+        if (prev && incoming > 0 && incoming < have) return prev;
+        return safe;
+      });
+    };
+
     // Full snapshot: sent once on connect, and after bulk operations.
     newSocket.on("state:update", (updatedState: GameState) => {
       clearTimeout(stateDeadline);
-      setGameState((prev) => {
-        const incoming = updatedState?.revision ?? 0;
-        const have = prev?.revision ?? 0;
-        if (prev && incoming > 0 && incoming < have) return prev;
-        return updatedState;
-      });
+      applyState(updatedState);
     });
 
     // Incremental update: only the slices that actually changed. Merged into
     // the current state so a routine roll transfers ~1.4 KB instead of ~68 KB.
     newSocket.on("state:patch", (patch: Partial<GameState>) => {
       setGameState((prev) => {
-        if (!prev) return prev;
+        if (!prev) {
+          // Patch arrived before the first snapshot — ask again, do not drop
+          // the session. Applying a partial patch as the whole state blanks
+          // the board (no cells).
+          if (newSocket.connected) newSocket.emit("client:resync");
+          return prev;
+        }
         const incoming = patch.revision ?? 0;
         const have = prev.revision ?? 0;
         if (incoming > 0 && incoming < have) return prev;
@@ -343,27 +361,26 @@ export default function App() {
       }, 1400);
     });
 
-    // Session expired or invalid -> force a clean re-login.
-    // Last-resort deadline. If no state has arrived after 15 seconds the
-    // session is unusable — an expired token, a server that never answers —
-    // and leaving the loading screen up forever is the worst outcome.
+    // Last-resort deadline. Do NOT wipe the session: Telegram Mini App would
+    // bounce back to the login form after a slow WebView, which looks like a
+    // crash. Pull a public snapshot over HTTP instead.
     const stateDeadline = setTimeout(() => {
       setGameState((current) => {
         if (current) return current;
-        console.warn("[Session] No state after 15s; returning to login.");
-        localStorage.clear();
-        setUserId(null);
-        setUserName("");
-        setUserRole("player");
-        setScreen("login");
+        console.warn("[Session] No socket state after 8s; HTTP fallback.");
+        void apiFetch("/api/state")
+          .then((r) => r.json())
+          .then((data) => applyState(data as GameState))
+          .catch(() => undefined);
         return current;
       });
-    }, 15000);
+    }, 8000);
 
     newSocket.on("connect_error", (err: Error) => {
       if (err?.message === "UNAUTHORIZED") {
         clearTimeout(stateDeadline);
-        localStorage.clear();
+        localStorage.removeItem("hapstore_token");
+        setLoginNotice("Сессия истекла. Нажмите «ИГРАТЬ» в боте ещё раз.");
         setUserId(null);
         setUserName("");
         setUserRole("player");
@@ -461,6 +478,9 @@ export default function App() {
     setScreen("board");
     localStorage.setItem("hapstore_screen", "board");
   };
+
+  const visibleScreen =
+    screen === "admin" && userRole !== "admin" ? "board" : screen;
 
   // The server picks the dice value and replies with "roll:result".
   const handleRoll = () => {
@@ -656,17 +676,17 @@ export default function App() {
       {/* Результат хода — поверх всего, после каждого броска */}
       <TurnOutcomeCard outcome={turnOutcome} onClose={() => setTurnOutcome(null)} />
 
-      {screen === "login" && (
+      {visibleScreen === "login" && (
         <LoginScreen
           backgroundUrl={gameState.loginBackground}
           onLogin={handleLogin}
           notice={loginNotice}
         />
       )}
-      {screen === "rules" && (
+      {visibleScreen === "rules" && (
         <RulesScreen backgroundUrl={gameState.rulesBackground} onProceed={handleProceedFromRules} />
       )}
-      {screen === "board" && (
+      {visibleScreen === "board" && (
         <CrashGuard area="board">
           <BoardView
             gameState={gameState}
@@ -695,7 +715,7 @@ export default function App() {
           />
         </CrashGuard>
       )}
-      {screen === "admin" && userRole === "admin" && (
+      {visibleScreen === "admin" && userRole === "admin" && (
         <AdminConsole
           gameState={gameState}
           socket={socket}

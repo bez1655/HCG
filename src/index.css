@@ -31,6 +31,8 @@ body,
   height: 100%;
   overflow: hidden;
   font-family: "Orbitron", sans-serif;
+  background: #060412;
+  color: #e0e0e6;
 }
 
 @layer utilities {

@@ -6,12 +6,13 @@
  * is also appended to player-moves.jsonl — that file is the source of
  * truth for an extract.
  *
- * Older events that only exist in the capped log / archive are still
- * folded in, so a first extract after this ships is not empty.
+ * Display expands a roll into every cell-to-cell step (dice walk, then
+ * any extra jump from the cell effect) so the admin can see where the
+ * chip went and why.
  */
-import type { GameLog, Player } from "../types";
+import type { Cell, GameLog, Player } from "../types";
 
-export type MoveKind = "roll" | "admin" | "restart" | "skip" | "other";
+export type MoveKind = "roll" | "admin" | "restart" | "skip" | "prize" | "other";
 
 export interface PlayerMove {
   at: number;
@@ -31,22 +32,31 @@ export interface PlayerHistory {
   moves: PlayerMove[];
 }
 
+/** One line the admin actually reads. */
+export interface HistoryLine {
+  at: number;
+  when: string;
+  fromCell: number | null;
+  toCell: number | null;
+  why: string;
+}
+
 const ROLL_RE = /выбросил\s+(\d+)\s+и переместился на клетку\s+(\d+)/i;
 const ADMIN_RE = /Клетка:\s*(\d+)\s*➔\s*(\d+)/;
 const RESTART_RE = /начал новый круг с клетки\s+(\d+)/i;
 const SKIP_RE = /пропустил ход/i;
+const PRIZE_RE = /получил призовой бонус:\s*"([^"]+)"/i;
+const WIN_RE = /получил приз:\s*(.+?)(?:!|$)/i;
 
 export function classifyLogMessage(message: string): Omit<PlayerMove, "at" | "timeLabel"> | null {
   const roll = message.match(ROLL_RE);
   if (roll) {
-    const toCell = Number(roll[2]);
-    const steps = Number(roll[1]);
     return {
       kind: "roll",
       fromCell: null,
-      toCell,
-      steps,
-      note: message,
+      toCell: Number(roll[2]),
+      steps: Number(roll[1]),
+      note: "",
     };
   }
 
@@ -57,7 +67,7 @@ export function classifyLogMessage(message: string): Omit<PlayerMove, "at" | "ti
       fromCell: Number(admin[1]),
       toCell: Number(admin[2]),
       steps: null,
-      note: message,
+      note: "",
     };
   }
 
@@ -68,7 +78,7 @@ export function classifyLogMessage(message: string): Omit<PlayerMove, "at" | "ti
       fromCell: Number(restart[1]),
       toCell: 0,
       steps: null,
-      note: message,
+      note: "",
     };
   }
 
@@ -78,7 +88,18 @@ export function classifyLogMessage(message: string): Omit<PlayerMove, "at" | "ti
       fromCell: null,
       toCell: null,
       steps: null,
-      note: message,
+      note: "",
+    };
+  }
+
+  const prize = message.match(PRIZE_RE) || message.match(WIN_RE);
+  if (prize) {
+    return {
+      kind: "prize",
+      fromCell: null,
+      toCell: null,
+      steps: null,
+      note: prize[1].trim(),
     };
   }
 
@@ -131,7 +152,7 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
   const all: PlayerMove[] = [];
   for (const list of lists) {
     for (const m of list) {
-      const key = `${m.kind}|${m.fromCell}|${m.toCell}|${m.steps}|${m.note}|${m.timeLabel}`;
+      const key = `${m.kind}|${m.fromCell}|${m.toCell}|${m.steps}|${m.note}|${m.at || m.timeLabel}`;
       if (seen.has(key)) continue;
       seen.add(key);
       all.push(m);
@@ -141,77 +162,217 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
     if (a.at && b.at && a.at !== b.at) return a.at - b.at;
     return 0;
   });
-  return all;
+  return fillMissingFrom(all);
 }
 
-export function formatPlayerHistoryText(history: PlayerHistory): string {
+/** Infer a missing start cell from the previous known position. */
+export function fillMissingFrom(moves: PlayerMove[]): PlayerMove[] {
+  let cursor: number | null = 0;
+  return moves.map((m) => {
+    const next = { ...m };
+    if (next.fromCell == null && next.toCell != null && next.kind === "roll" && cursor != null) {
+      next.fromCell = cursor;
+    }
+    if (next.toCell != null) cursor = next.toCell;
+    else if (next.kind === "restart") cursor = 0;
+    return next;
+  });
+}
+
+function cellTitle(id: number | null, cells?: Cell[]): string {
+  if (id == null || !Number.isFinite(id)) return "?";
+  const named = cells?.find((c) => c.id === id);
+  if (named && named.name && !/^Клетка\s+\d+$/i.test(named.name)) {
+    return `${id} «${named.name}»`;
+  }
+  return String(id);
+}
+
+function formatWhen(at: number, timeLabel: string): string {
+  if (at > 1e11) {
+    return new Date(at).toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+  return timeLabel?.trim() || "дата неизвестна";
+}
+
+function reasonForJump(from: number, to: number, note: string, cells?: Cell[]): string {
+  const clean = (note || "").replace(/\s+/g, " ").trim();
+  if (clean) return clean.slice(0, 140);
+  const landed = cells?.find((c) => c.id === from);
+  if (landed?.extra) return `эффект клетки: ${landed.extra}`;
+  if (landed?.name && !/^Клетка\s+\d+$/i.test(landed.name)) return `эффект: ${landed.name}`;
+  const delta = to - from;
+  if (delta > 0) return `сдвиг вперёд на ${delta}`;
+  if (delta < 0) return `сдвиг назад на ${Math.abs(delta)}`;
+  return "без сдвига";
+}
+
+/**
+ * Turn stored events into one line per cell change (and prize awards).
+ */
+export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): HistoryLine[] {
+  const lines: HistoryLine[] = [];
+
+  for (const m of moves) {
+    const when = formatWhen(m.at, m.timeLabel);
+
+    if (m.kind === "prize") {
+      lines.push({
+        at: m.at,
+        when,
+        fromCell: m.toCell,
+        toCell: m.toCell,
+        why: `приз: ${m.note || "награда"}`,
+      });
+      continue;
+    }
+
+    if (m.kind === "skip") {
+      lines.push({ at: m.at, when, fromCell: m.fromCell, toCell: m.fromCell, why: "пропуск хода" });
+      continue;
+    }
+
+    if (m.kind === "restart") {
+      lines.push({
+        at: m.at,
+        when,
+        fromCell: m.fromCell,
+        toCell: 0,
+        why: "новый круг — фишка на старт",
+      });
+      continue;
+    }
+
+    if (m.kind === "admin" && m.fromCell != null && m.toCell != null) {
+      lines.push({
+        at: m.at,
+        when,
+        fromCell: m.fromCell,
+        toCell: m.toCell,
+        why: "админ переставил фишку",
+      });
+      continue;
+    }
+
+    if (m.kind === "roll" && m.fromCell != null && m.toCell != null) {
+      const steps = m.steps && m.steps > 0 ? m.steps : Math.max(1, Math.abs(m.toCell - m.fromCell));
+      const walkedTo = Math.max(0, Math.min(64, m.fromCell + steps));
+
+      if (walkedTo !== m.fromCell) {
+        const dir = walkedTo >= m.fromCell ? 1 : -1;
+        for (let c = m.fromCell; c !== walkedTo; ) {
+          const nxt = c + dir;
+          lines.push({
+            at: m.at,
+            when,
+            fromCell: c,
+            toCell: nxt,
+            why: `кубик ${steps}`,
+          });
+          c = nxt;
+        }
+      }
+
+      if (m.toCell !== walkedTo) {
+        lines.push({
+          at: m.at,
+          when,
+          fromCell: walkedTo,
+          toCell: m.toCell,
+          why: reasonForJump(walkedTo, m.toCell, m.note, cells),
+        });
+      }
+
+      if (m.note && /приз|бонус|кристалл|кредит/i.test(m.note)) {
+        lines.push({
+          at: m.at,
+          when,
+          fromCell: m.toCell,
+          toCell: m.toCell,
+          why: `приз / бонус: ${m.note.slice(0, 140)}`,
+        });
+      }
+      continue;
+    }
+
+    if (m.toCell != null) {
+      lines.push({
+        at: m.at,
+        when,
+        fromCell: m.fromCell,
+        toCell: m.toCell,
+        why: m.note || "перемещение",
+      });
+    }
+  }
+
+  return lines;
+}
+
+function lineText(line: HistoryLine, cells?: Cell[], html = false): string {
+  const b = (s: string) => (html ? `<b>${s}</b>` : s);
+  if (line.fromCell == null && line.toCell == null) {
+    return `[${line.when}] ${line.why}`;
+  }
+  if (line.fromCell === line.toCell || line.fromCell == null) {
+    return `[${line.when}] ${cellTitle(line.toCell, cells)} — ${line.why}`;
+  }
+  return (
+    `[${line.when}] ${cellTitle(line.fromCell, cells)} → ${b(cellTitle(line.toCell, cells))}` +
+    ` — ${line.why}`
+  );
+}
+
+export function formatPlayerHistoryText(history: PlayerHistory, cells?: Cell[]): string {
   const who = history.alias ? `${history.alias} (${history.name})` : history.name;
-  const lines = [
-    `📜 История: ${who}`,
-    `Сейчас клетка: ${history.cell}`,
-    `Записей: ${history.moves.length}`,
+  const lines = expandHistoryLines(history.moves, cells);
+  const out = [
+    `История: ${who}`,
+    `Сейчас клетка: ${cellTitle(history.cell, cells)}`,
+    `Переходов: ${lines.length}`,
     "",
   ];
 
-  if (history.moves.length === 0) {
-    lines.push("Перемещений в журнале нет.");
-    return lines.join("\n");
+  if (lines.length === 0) {
+    out.push("Перемещений в журнале нет.");
+    return out.join("\n");
   }
 
-  let n = 1;
-  for (const m of history.moves) {
-    const when = m.timeLabel || "—";
-    if (m.kind === "roll") {
-      const from = m.fromCell != null ? `${m.fromCell} ➔ ` : "";
-      lines.push(`${n}. [${when}] кубик ${m.steps ?? "?"} · ${from}${m.toCell ?? "?"}`);
-    } else if (m.kind === "admin") {
-      lines.push(`${n}. [${when}] админ · ${m.fromCell} ➔ ${m.toCell}`);
-    } else if (m.kind === "restart") {
-      lines.push(`${n}. [${when}] новый круг · клетка 0`);
-    } else if (m.kind === "skip") {
-      lines.push(`${n}. [${when}] пропуск хода`);
-    } else {
-      lines.push(`${n}. [${when}] ${m.note}`);
-    }
-    n += 1;
-  }
-
-  return lines.join("\n");
+  lines.forEach((line, i) => {
+    out.push(`${i + 1}. ${lineText(line, cells, false)}`);
+  });
+  return out.join("\n");
 }
 
-export function formatPlayerHistoryHtml(history: PlayerHistory): string {
+export function formatPlayerHistoryHtml(history: PlayerHistory, cells?: Cell[]): string {
   const who = history.alias
     ? `${escapeHtml(history.alias)} (${escapeHtml(history.name)})`
     : escapeHtml(history.name);
+  const lines = expandHistoryLines(history.moves, cells);
   const head =
     `📜 <b>История игрока</b>\n` +
     `${who}\n` +
-    `Сейчас клетка: <b>${history.cell}</b>\n` +
-    `Записей: <b>${history.moves.length}</b>`;
+    `Сейчас: <b>${escapeHtml(cellTitle(history.cell, cells))}</b>\n` +
+    `Переходов: <b>${lines.length}</b>`;
 
-  if (history.moves.length === 0) {
+  if (lines.length === 0) {
     return head + "\n\nПеремещений в журнале нет.";
   }
 
-  const rows = history.moves.slice(-40).map((m, i, arr) => {
-    const idx = history.moves.length - arr.length + i + 1;
-    const when = escapeHtml(m.timeLabel || "—");
-    if (m.kind === "roll") {
-      const from = m.fromCell != null ? `${m.fromCell} ➔ ` : "";
-      return `${idx}. [${when}] 🎲 ${m.steps ?? "?"} · ${from}<b>${m.toCell ?? "?"}</b>`;
-    }
-    if (m.kind === "admin") {
-      return `${idx}. [${when}] 🛠️ ${m.fromCell} ➔ <b>${m.toCell}</b>`;
-    }
-    if (m.kind === "restart") return `${idx}. [${when}] 🔄 новый круг`;
-    if (m.kind === "skip") return `${idx}. [${when}] ⏳ пропуск`;
-    return `${idx}. [${when}] ${escapeHtml(m.note).slice(0, 160)}`;
+  const shown = lines.slice(-50);
+  const rows = shown.map((line, i) => {
+    const idx = lines.length - shown.length + i + 1;
+    return `${idx}. ${lineText(line, cells, true)}`;
   });
 
   const clipped =
-    history.moves.length > 40
-      ? `\n<i>В сообщении последние 40. Полный список — в файле.</i>`
-      : "";
+    lines.length > 50 ? `\n<i>В сообщении последние 50. Полный список — в файле.</i>` : "";
 
   return `${head}\n\n${rows.join("\n")}${clipped}`;
 }
@@ -223,10 +384,7 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-export function findPlayerByTarget(
-  players: Player[],
-  target: string
-): Player | undefined {
+export function findPlayerByTarget(players: Player[], target: string): Player | undefined {
   const needle = target.trim().toLowerCase().replace(/^@/, "");
   if (!needle) return undefined;
   return players.find(

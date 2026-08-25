@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyLogMessage,
+  expandHistoryLines,
   findPlayerByTarget,
   formatPlayerHistoryText,
   logMentionsPlayer,
@@ -117,8 +118,29 @@ describe("player movement history", () => {
         },
       ],
     });
-    expect(text).toContain("0 ➔ 4");
-    expect(text).toContain("4 ➔ 18");
+    expect(text).toContain("0 → 1");
+    expect(text).toContain("3 → 4");
+    expect(text).toContain("кубик 4");
+    expect(text).toContain("4 → 5");
     expect(text).toContain("Сейчас клетка: 18");
+  });
+
+  it("expands a roll into every cell and a separate prize line", () => {
+    const lines = expandHistoryLines([
+      {
+        at: 1_700_000_000_000,
+        timeLabel: "",
+        kind: "roll",
+        fromCell: 0,
+        toCell: 4,
+        steps: 4,
+        note: "КРИПТО-БОНУС",
+      },
+    ]);
+    expect(
+      lines.filter((l) => l.fromCell !== l.toCell).map((l) => `${l.fromCell}→${l.toCell}`)
+    ).toEqual(["0→1", "1→2", "2→3", "3→4"]);
+    expect(lines.some((l) => l.why.startsWith("приз"))).toBe(true);
+    expect(lines[0].when).toMatch(/\d{2}\.\d{2}\.\d{4}/);
   });
 });

@@ -975,7 +975,7 @@ export default function BoardView({
               {activeChatTab === "chat" ? (
                 <div className="flex-1 flex flex-col min-h-0">
                   <div className="flex-1 overflow-y-auto space-y-2.5 scrollbar-none pr-1">
-                    {gameState.chatMessages.map((msg) => (
+                    {(gameState.chatMessages || []).map((msg) => (
                       <div
                         key={msg.id}
                         className="text-[11px] leading-relaxed break-words font-sans flex flex-col bg-white/5 p-2 rounded-xl"
@@ -1017,7 +1017,7 @@ export default function BoardView({
                     arrives in that order — the .reverse() here undid it and
                     buried the latest event at the bottom of a long scroll.
                   */}
-                  {gameState.logs.map((log) => {
+                  {(gameState.logs || []).map((log) => {
                     const isRoll = log.type === "roll" || log.type === "move";
                     const isSystem = log.type === "system";
                     const isChat = log.type === "chat";
@@ -1031,6 +1031,7 @@ export default function BoardView({
                           : isError
                             ? "text-red-400 font-bold"
                             : "text-gray-300";
+                    const stamp = String(log.timestamp || "");
                     return (
                       <div
                         key={log.id}
@@ -1038,7 +1039,7 @@ export default function BoardView({
                       >
                         <div className="flex justify-between text-[7px] text-gray-500 mb-0.5 font-mono">
                           <span className="uppercase">{log.type}</span>
-                          <span>{log.timestamp.split(" ")[1] || log.timestamp}</span>
+                          <span>{stamp.split(" ")[1] || stamp}</span>
                         </div>
                         <span className={`${colorClass} select-text leading-snug`}>
                           {log.message}
