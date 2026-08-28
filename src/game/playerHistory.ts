@@ -144,7 +144,37 @@ function parseLooseTime(stamp?: string): number {
   if (!stamp) return 0;
   const asNum = Number(stamp);
   if (Number.isFinite(asNum) && asNum > 1e11) return asNum;
+
+  const ru = stamp.match(
+    /(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/
+  );
+  if (ru) {
+    const [, dd, mm, yyyy, hh = "0", min = "0", ss = "0"] = ru;
+    const t = new Date(
+      Number(yyyy),
+      Number(mm) - 1,
+      Number(dd),
+      Number(hh),
+      Number(min),
+      Number(ss)
+    ).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  const ampm = stamp.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if (ampm) {
+    let hh = Number(ampm[1]) % 12;
+    if (ampm[4].toUpperCase() === "PM") hh += 12;
+    const t = new Date();
+    t.setHours(hh, Number(ampm[2]), Number(ampm[3] || 0), 0);
+    return t.getTime();
+  }
   return 0;
+}
+
+function rollFingerprint(m: PlayerMove): string {
+  const bucket = m.at > 1e11 ? String(Math.floor(m.at / 120_000)) : "";
+  return `${m.kind}|${m.steps}|${m.toCell}|${m.note}|${bucket}`;
 }
 
 export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
@@ -152,10 +182,28 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
   const all: PlayerMove[] = [];
   for (const list of lists) {
     for (const m of list) {
-      const key = `${m.kind}|${m.fromCell}|${m.toCell}|${m.steps}|${m.note}|${m.at || m.timeLabel}`;
+      const stamped = { ...m, at: m.at > 1e11 ? m.at : parseLooseTime(m.timeLabel) };
+      const key =
+        stamped.kind === "roll"
+          ? rollFingerprint(stamped)
+          : `${stamped.kind}|${stamped.fromCell}|${stamped.toCell}|${stamped.steps}|${stamped.note}|${stamped.at || stamped.timeLabel}`;
       if (seen.has(key)) continue;
+      // A live-log copy of a jsonl roll often has at=0 and a different fromCell.
+      if (stamped.kind === "roll") {
+        const dup = all.some((x) => {
+          if (x.kind !== "roll" || x.steps !== stamped.steps || x.toCell !== stamped.toCell) {
+            return false;
+          }
+          if (x.fromCell != null && stamped.fromCell != null && x.fromCell !== stamped.fromCell) {
+            return true;
+          }
+          const dt = Math.abs((x.at || 0) - (stamped.at || 0));
+          return dt < 24 * 60 * 60 * 1000 || x.at < 1e11 || stamped.at < 1e11;
+        });
+        if (dup) continue;
+      }
       seen.add(key);
-      all.push(m);
+      all.push(stamped);
     }
   }
   all.sort((a, b) => {
@@ -201,12 +249,25 @@ function formatWhen(at: number, timeLabel: string): string {
   return timeLabel?.trim() || "дата неизвестна";
 }
 
+/** True when landing on this cell actually moves the token. Prizes do not. */
+function cellMovesToken(cell: Cell | undefined): number {
+  if (!cell) return 0;
+  if (cell.type === "penalty" || cell.type === "snake") {
+    return cell.value < 0 ? cell.value : 0;
+  }
+  if (cell.type === "bonus" && cell.value > 0) return cell.value;
+  return 0;
+}
+
 function reasonForJump(from: number, to: number, note: string, cells?: Cell[]): string {
   const clean = (note || "").replace(/\s+/g, " ").trim();
-  if (clean) return clean.slice(0, 140);
+  if (/откат|смещение|ускорител|прыжок|телепорт/i.test(clean)) return clean.slice(0, 140);
   const landed = cells?.find((c) => c.id === from);
-  if (landed?.extra) return `эффект клетки: ${landed.extra}`;
-  if (landed?.name && !/^Клетка\s+\d+$/i.test(landed.name)) return `эффект: ${landed.name}`;
+  const shift = cellMovesToken(landed);
+  if (shift) {
+    if (landed?.extra) return `эффект клетки: ${landed.extra}`;
+    if (landed?.name && !/^Клетка\s+\d+$/i.test(landed.name)) return `эффект: ${landed.name}`;
+  }
   const delta = to - from;
   if (delta > 0) return `сдвиг вперёд на ${delta}`;
   if (delta < 0) return `сдвиг назад на ${Math.abs(delta)}`;
@@ -260,36 +321,58 @@ export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): History
       continue;
     }
 
-    if (m.kind === "roll" && m.fromCell != null && m.toCell != null) {
-      const steps = m.steps && m.steps > 0 ? m.steps : Math.max(1, Math.abs(m.toCell - m.fromCell));
-      const walkedTo = Math.max(0, Math.min(64, m.fromCell + steps));
+    if (m.kind === "roll" && m.toCell != null) {
+      const steps = m.steps && m.steps > 0 ? m.steps : 0;
+      let from = m.fromCell;
+      let landed = from != null && steps ? Math.max(0, Math.min(64, from + steps)) : m.toCell;
+      const shiftAt = (id: number) => cellMovesToken(cells?.find((c) => c.id === id));
 
-      if (walkedTo !== m.fromCell) {
-        const dir = walkedTo >= m.fromCell ? 1 : -1;
-        for (let c = m.fromCell; c !== walkedTo; ) {
+      if (from != null && steps && landed !== m.toCell && landed + shiftAt(landed) !== m.toCell) {
+        const inferred = m.toCell - steps;
+        if (inferred >= 0 && inferred <= 64) {
+          const altLanded = Math.max(0, Math.min(64, inferred + steps));
+          if (altLanded === m.toCell || altLanded + shiftAt(altLanded) === m.toCell) {
+            from = inferred;
+            landed = altLanded;
+          } else {
+            landed = m.toCell;
+          }
+        } else {
+          landed = m.toCell;
+        }
+      }
+
+      if (from == null) {
+        from = steps ? Math.max(0, m.toCell - steps) : m.toCell;
+        landed = Math.max(0, Math.min(64, from + (steps || 0)));
+      }
+
+      if (landed !== from) {
+        const dir = landed >= from ? 1 : -1;
+        for (let c = from; c !== landed; ) {
           const nxt = c + dir;
           lines.push({
             at: m.at,
             when,
             fromCell: c,
             toCell: nxt,
-            why: `кубик ${steps}`,
+            why: steps ? `кубик ${steps}` : "перемещение",
           });
           c = nxt;
         }
       }
 
-      if (m.toCell !== walkedTo) {
+      if (m.toCell !== landed && landed + shiftAt(landed) === m.toCell) {
         lines.push({
           at: m.at,
           when,
-          fromCell: walkedTo,
+          fromCell: landed,
           toCell: m.toCell,
-          why: reasonForJump(walkedTo, m.toCell, m.note, cells),
+          why: reasonForJump(landed, m.toCell, m.note, cells),
         });
       }
 
-      if (m.note && /приз|бонус|кристалл|кредит/i.test(m.note)) {
+      if (m.note && /приз|бонус|кристалл|кредит|1000 CR|1500|2000/i.test(m.note)) {
         lines.push({
           at: m.at,
           when,

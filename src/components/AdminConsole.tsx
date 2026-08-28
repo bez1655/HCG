@@ -891,7 +891,6 @@ export default function AdminConsole({
                   {gameState.players
                     .filter((p) => p.role === "player")
                     .map((p) => {
-                      initPlayerEdit(p);
                       const edit = playerEdits[p.id] || {
                         cell: p.cell,
                         name: p.name,

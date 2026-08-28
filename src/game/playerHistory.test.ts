@@ -112,7 +112,7 @@ describe("player movement history", () => {
           timeLabel: "12:01",
           kind: "roll",
           fromCell: 4,
-          toCell: 18,
+          toCell: 9,
           steps: 5,
           note: "",
         },
@@ -123,6 +123,89 @@ describe("player movement history", () => {
     expect(text).toContain("кубик 4");
     expect(text).toContain("4 → 5");
     expect(text).toContain("Сейчас клетка: 18");
+  });
+
+  it("does not invent a reverse jump when fromCell was inferred wrongly", () => {
+    const cells = [
+      { id: 4, name: "КРИПТО-БОНУС", type: "bitcoin" as const, x: 0, y: 0, description: "", value: 1000 },
+      { id: 10, name: "МАЛЫЙ", type: "flask" as const, x: 0, y: 0, description: "", value: 2300, extra: "МАЛЫЙ" },
+      { id: 12, name: "ОТКАТ", type: "penalty" as const, x: 0, y: 0, description: "", value: -3, extra: "-3 КЛ." },
+    ];
+    const bogus = expandHistoryLines(
+      [
+        {
+          at: 1,
+          timeLabel: "",
+          kind: "roll",
+          fromCell: 9,
+          toCell: 4,
+          steps: 4,
+          note: "1000 CR",
+        },
+      ],
+      cells as any
+    );
+    const jumps = bogus.filter((l) => l.fromCell !== l.toCell).map((l) => `${l.fromCell}→${l.toCell}`);
+    expect(jumps).toEqual(["0→1", "1→2", "2→3", "3→4"]);
+
+    const penalty = expandHistoryLines(
+      [
+        {
+          at: 2,
+          timeLabel: "",
+          kind: "roll",
+          fromCell: 6,
+          toCell: 9,
+          steps: 6,
+          note: "Сработал откат системы! Смещение назад на 3 клетки (с клетки 12 на клетку 9).",
+        },
+      ],
+      cells as any
+    );
+    expect(penalty.map((l) => `${l.fromCell}→${l.toCell}`).join(" ")).toContain("11→12");
+    expect(penalty.map((l) => `${l.fromCell}→${l.toCell}`)).toContain("12→9");
+
+    const mismatch = expandHistoryLines(
+      [
+        {
+          at: 3,
+          timeLabel: "",
+          kind: "roll",
+          fromCell: 11,
+          toCell: 10,
+          steps: 1,
+          note: "",
+        },
+      ],
+      cells as any
+    );
+    expect(mismatch.map((l) => `${l.fromCell}→${l.toCell}`)).toEqual(["9→10"]);
+  });
+
+  it("drops a log duplicate of a jsonl roll", () => {
+    const jsonl = [
+      {
+        at: 1_700_000_000_000,
+        timeLabel: "25.08.2026, 10:24",
+        kind: "roll" as const,
+        fromCell: 4,
+        toCell: 6,
+        steps: 2,
+        note: "",
+      },
+    ];
+    const fromLog = [
+      {
+        at: 0,
+        timeLabel: "10:24:29 AM",
+        kind: "roll" as const,
+        fromCell: 9,
+        toCell: 6,
+        steps: 2,
+        note: "",
+      },
+    ];
+    expect(mergeMoves(jsonl, fromLog)).toHaveLength(1);
   });
 
   it("expands a roll into every cell and a separate prize line", () => {

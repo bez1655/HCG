@@ -1067,19 +1067,11 @@ export default function BoardView({
           className="board-container relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black shadow-[0_0_80px_rgba(0,0,0,0.9)] flex-shrink-0"
         >
           {/* Background Map video */}
-          <video
-            ref={boardVideoRef}
-            src="/BoardHAP.mp4?v=6"
-            autoPlay
-            loop
-            muted
-            playsInline
-            poster="/BoardHAP.png?v=6"
+          <img
+            src="/BoardHAP.png?v=7"
+            alt="Hapstore board"
             className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
-            onError={(_e) => {
-              console.error("Board background video load error");
-            }}
-          ></video>
+          />
 
           {/* SEC_BOARD coordinate decorative text */}
           <div className="absolute bottom-3 right-3 font-mono text-[8px] opacity-40 uppercase tracking-widest text-white pointer-events-none z-20">
