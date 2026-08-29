@@ -204,15 +204,22 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
       all.push(stamped);
     }
   }
-  all.sort((a, b) => {
+  const hasDatedRolls = all.some((m) => m.kind === "roll" && m.at > 1e11);
+  const kept = hasDatedRolls
+    ? all.filter((m) => {
+        if ((m.kind === "roll" || m.kind === "prize") && m.at < 1e11) return false;
+        return true;
+      })
+    : all;
+  kept.sort((a, b) => {
     const aOk = a.at > 1e11;
     const bOk = b.at > 1e11;
     if (aOk && bOk) return a.at - b.at;
-    if (aOk && !bOk) return 1;
-    if (!aOk && bOk) return -1;
+    if (aOk && !bOk) return -1;
+    if (!aOk && bOk) return 1;
     return 0;
   });
-  return fillMissingFrom(all);
+  return fillMissingFrom(kept);
 }
 
 /** Infer a missing start cell from the previous known position. */
@@ -277,7 +284,7 @@ function reasonForJump(from: number, to: number, note: string, cells?: Cell[]): 
 }
 
 /**
- * Turn stored events into one line per cell change (and prize awards).
+ * One line per roll (not per cell): date, dice, from, land, extra after effect.
  */
 export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): HistoryLine[] {
   const lines: HistoryLine[] = [];
@@ -286,13 +293,6 @@ export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): History
     const when = formatWhen(m.at, m.timeLabel);
 
     if (m.kind === "prize") {
-      lines.push({
-        at: m.at,
-        when,
-        fromCell: m.toCell,
-        toCell: m.toCell,
-        why: `приз: ${m.note || "награда"}`,
-      });
       continue;
     }
 
@@ -307,7 +307,7 @@ export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): History
         when,
         fromCell: m.fromCell,
         toCell: 0,
-        why: "новый круг — фишка на старт",
+        why: `новый круг — с ${cellTitle(m.fromCell, cells)} на старт`,
       });
       continue;
     }
@@ -318,7 +318,7 @@ export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): History
         when,
         fromCell: m.fromCell,
         toCell: m.toCell,
-        why: "админ переставил фишку",
+        why: `админ — с ${cellTitle(m.fromCell, cells)} на ${cellTitle(m.toCell, cells)}`,
       });
       continue;
     }
@@ -349,40 +349,24 @@ export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): History
         landed = Math.max(0, Math.min(64, from + (steps || 0)));
       }
 
-      if (landed !== from) {
-        const dir = landed >= from ? 1 : -1;
-        for (let c = from; c !== landed; ) {
-          const nxt = c + dir;
-          lines.push({
-            at: m.at,
-            when,
-            fromCell: c,
-            toCell: nxt,
-            why: steps ? `кубик ${steps}` : "перемещение",
-          });
-          c = nxt;
-        }
+      const final = m.toCell;
+      const effectApplies = final !== landed && landed + shiftAt(landed) === final;
+      const after = effectApplies ? final : landed;
+      const shift = shiftAt(landed);
+      let extra = "";
+      if (effectApplies && shift < 0) {
+        extra = ` — штраф на ${cellTitle(after, cells)}`;
+      } else if (effectApplies && shift > 0) {
+        extra = ` — бонус на ${cellTitle(after, cells)}`;
       }
-
-      if (m.toCell !== landed && landed + shiftAt(landed) === m.toCell) {
-        lines.push({
-          at: m.at,
-          when,
-          fromCell: landed,
-          toCell: m.toCell,
-          why: reasonForJump(landed, m.toCell, m.note, cells),
-        });
-      }
-
-      if (m.note && /приз|бонус|кристалл|кредит|1000 CR|1500|2000/i.test(m.note)) {
-        lines.push({
-          at: m.at,
-          when,
-          fromCell: m.toCell,
-          toCell: m.toCell,
-          why: `приз / бонус: ${m.note.slice(0, 140)}`,
-        });
-      }
+      const dice = steps ? `выпало ${steps}` : "ход";
+      lines.push({
+        at: m.at,
+        when,
+        fromCell: from,
+        toCell: after,
+        why: `${dice} — с ${cellTitle(from, cells)} на ${cellTitle(landed, cells)}${extra}`,
+      });
       continue;
     }
 
@@ -400,18 +384,9 @@ export function expandHistoryLines(moves: PlayerMove[], cells?: Cell[]): History
   return lines;
 }
 
-function lineText(line: HistoryLine, cells?: Cell[], html = false): string {
-  const b = (s: string) => (html ? `<b>${s}</b>` : s);
-  if (line.fromCell == null && line.toCell == null) {
-    return `[${line.when}] ${line.why}`;
-  }
-  if (line.fromCell === line.toCell || line.fromCell == null) {
-    return `[${line.when}] ${cellTitle(line.toCell, cells)} — ${line.why}`;
-  }
-  return (
-    `[${line.when}] ${cellTitle(line.fromCell, cells)} → ${b(cellTitle(line.toCell, cells))}` +
-    ` — ${line.why}`
-  );
+function lineText(line: HistoryLine, _cells?: Cell[], html = false): string {
+  void html;
+  return `[${line.when}] ${line.why}`;
 }
 
 export function formatPlayerHistoryText(history: PlayerHistory, cells?: Cell[]): string {
@@ -420,7 +395,7 @@ export function formatPlayerHistoryText(history: PlayerHistory, cells?: Cell[]):
   const out = [
     `История: ${who}`,
     `Сейчас клетка: ${cellTitle(history.cell, cells)}`,
-    `Переходов: ${lines.length}`,
+    `Ходов: ${lines.length}`,
     "",
   ];
 

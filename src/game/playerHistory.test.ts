@@ -118,10 +118,10 @@ describe("player movement history", () => {
         },
       ],
     });
-    expect(text).toContain("0 → 1");
-    expect(text).toContain("3 → 4");
-    expect(text).toContain("кубик 4");
-    expect(text).toContain("4 → 5");
+    expect(text).toContain("выпало 4");
+    expect(text).toContain("с 0 на 4");
+    expect(text).toContain("выпало 5");
+    expect(text).toContain("с 4 на 9");
     expect(text).toContain("Сейчас клетка: 18");
   });
 
@@ -145,8 +145,9 @@ describe("player movement history", () => {
       ],
       cells as any
     );
-    const jumps = bogus.filter((l) => l.fromCell !== l.toCell).map((l) => `${l.fromCell}→${l.toCell}`);
-    expect(jumps).toEqual(["0→1", "1→2", "2→3", "3→4"]);
+    expect(bogus).toHaveLength(1);
+    expect(bogus[0].why).toContain("выпало 4");
+    expect(bogus[0].why).toContain("с 0 на 4");
 
     const penalty = expandHistoryLines(
       [
@@ -162,8 +163,9 @@ describe("player movement history", () => {
       ],
       cells as any
     );
-    expect(penalty.map((l) => `${l.fromCell}→${l.toCell}`).join(" ")).toContain("11→12");
-    expect(penalty.map((l) => `${l.fromCell}→${l.toCell}`)).toContain("12→9");
+    expect(penalty).toHaveLength(1);
+    expect(penalty[0].why).toMatch(/выпало 6 — с 6 на 12/);
+    expect(penalty[0].why).toMatch(/штраф на 9/);
 
     const mismatch = expandHistoryLines(
       [
@@ -179,7 +181,8 @@ describe("player movement history", () => {
       ],
       cells as any
     );
-    expect(mismatch.map((l) => `${l.fromCell}→${l.toCell}`)).toEqual(["9→10"]);
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0].why).toContain("с 9 на 10");
   });
 
   it("drops a log duplicate of a jsonl roll", () => {
@@ -242,10 +245,35 @@ describe("player movement history", () => {
     ];
     const merged = mergeMoves(jsonl, ghost);
     expect(merged.filter((m) => m.steps === 2 && m.toCell === 6)).toHaveLength(1);
-    const start = merged.find((m) => m.steps === 4 && m.toCell === 4);
-    expect(start).toBeTruthy();
-    expect(start!.at).toBeLessThan(1e11);
-    expect(merged[0].toCell).toBe(4);
+    expect(merged.find((m) => m.steps === 4 && m.toCell === 4)).toBeUndefined();
+  });
+
+  it("keeps an undated admin move after dated rolls", () => {
+    const jsonl = [
+      {
+        at: 1_775_000_000_000,
+        timeLabel: "25.08.2026, 10:24",
+        kind: "roll" as const,
+        fromCell: 4,
+        toCell: 6,
+        steps: 2,
+        note: "",
+      },
+    ];
+    const admin = [
+      {
+        at: 0,
+        timeLabel: "11:37:56 AM",
+        kind: "admin" as const,
+        fromCell: 9,
+        toCell: 15,
+        steps: null,
+        note: "",
+      },
+    ];
+    const merged = mergeMoves(jsonl, admin);
+    expect(merged.map((m) => m.kind)).toEqual(["roll", "admin"]);
+    expect(merged[1].toCell).toBe(15);
   });
 
   it("expands a roll into every cell and a separate prize line", () => {
@@ -260,10 +288,8 @@ describe("player movement history", () => {
         note: "КРИПТО-БОНУС",
       },
     ]);
-    expect(
-      lines.filter((l) => l.fromCell !== l.toCell).map((l) => `${l.fromCell}→${l.toCell}`)
-    ).toEqual(["0→1", "1→2", "2→3", "3→4"]);
-    expect(lines.some((l) => l.why.startsWith("приз"))).toBe(true);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].why).toContain("выпало 4 — с 0 на 4");
     expect(lines[0].when).toMatch(/\d{2}\.\d{2}\.\d{4}/);
   });
 });

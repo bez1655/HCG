@@ -352,7 +352,7 @@ const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-08-29.1";
+const SERVER_BUILD = "2026-08-29.3";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -3131,9 +3131,18 @@ async function start() {
         addLog({
           id: "admin_upd_" + Date.now(),
           message: `🛠️ Админ изменил параметры ${shownName(p)}: Клетка: ${oldCell} ➔ ${p.cell}.`,
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: new Date().toLocaleString("ru-RU"),
           type: "admin",
         });
+        if (oldCell !== p.cell) {
+          recordPlayerMove(p, {
+            kind: "admin",
+            fromCell: oldCell,
+            toCell: p.cell,
+            steps: null,
+            note: "админ переставил фишку",
+          });
+        }
 
         saveState();
         broadcastState();
