@@ -208,6 +208,46 @@ describe("player movement history", () => {
     expect(mergeMoves(jsonl, fromLog)).toHaveLength(1);
   });
 
+  it("does not re-date a clock-only log as today", () => {
+    const jsonl = [
+      {
+        at: 1_775_000_000_000,
+        timeLabel: "25.08.2026, 10:24",
+        kind: "roll" as const,
+        fromCell: 4,
+        toCell: 6,
+        steps: 2,
+        note: "",
+      },
+    ];
+    const ghost = [
+      {
+        at: 0,
+        timeLabel: "10:24:29 AM",
+        kind: "roll" as const,
+        fromCell: 4,
+        toCell: 6,
+        steps: 2,
+        note: "",
+      },
+      {
+        at: 0,
+        timeLabel: "7:11:33 PM",
+        kind: "roll" as const,
+        fromCell: null,
+        toCell: 4,
+        steps: 4,
+        note: "1000 CR",
+      },
+    ];
+    const merged = mergeMoves(jsonl, ghost);
+    expect(merged.filter((m) => m.steps === 2 && m.toCell === 6)).toHaveLength(1);
+    const start = merged.find((m) => m.steps === 4 && m.toCell === 4);
+    expect(start).toBeTruthy();
+    expect(start!.at).toBeLessThan(1e11);
+    expect(merged[0].toCell).toBe(4);
+  });
+
   it("expands a roll into every cell and a separate prize line", () => {
     const lines = expandHistoryLines([
       {

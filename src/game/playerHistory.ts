@@ -161,14 +161,8 @@ function parseLooseTime(stamp?: string): number {
     return Number.isFinite(t) ? t : 0;
   }
 
-  const ampm = stamp.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)/i);
-  if (ampm) {
-    let hh = Number(ampm[1]) % 12;
-    if (ampm[4].toUpperCase() === "PM") hh += 12;
-    const t = new Date();
-    t.setHours(hh, Number(ampm[2]), Number(ampm[3] || 0), 0);
-    return t.getTime();
-  }
+  // Clock-only stamps ("7:11:33 PM", "10:24:29") must NOT become "today".
+  // That re-dated old log lines as new moves (Catwoman 29.08 10:24 / 19:11).
   return 0;
 }
 
@@ -188,18 +182,22 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
           ? rollFingerprint(stamped)
           : `${stamped.kind}|${stamped.fromCell}|${stamped.toCell}|${stamped.steps}|${stamped.note}|${stamped.at || stamped.timeLabel}`;
       if (seen.has(key)) continue;
-      // A live-log copy of a jsonl roll often has at=0 and a different fromCell.
       if (stamped.kind === "roll") {
-        const dup = all.some((x) => {
-          if (x.kind !== "roll" || x.steps !== stamped.steps || x.toCell !== stamped.toCell) {
-            return false;
-          }
-          if (x.fromCell != null && stamped.fromCell != null && x.fromCell !== stamped.fromCell) {
-            return true;
-          }
-          const dt = Math.abs((x.at || 0) - (stamped.at || 0));
-          return dt < 24 * 60 * 60 * 1000 || x.at < 1e11 || stamped.at < 1e11;
-        });
+        const dup = all.some(
+          (x) => x.kind === "roll" && x.steps === stamped.steps && x.toCell === stamped.toCell
+        );
+        if (dup) continue;
+      }
+      if (stamped.kind === "admin") {
+        if (stamped.fromCell != null && stamped.fromCell === stamped.toCell) continue;
+        const dup = all.some(
+          (x) =>
+            x.kind === "admin" && x.fromCell === stamped.fromCell && x.toCell === stamped.toCell
+        );
+        if (dup) continue;
+      }
+      if (stamped.kind === "prize") {
+        const dup = all.some((x) => x.kind === "prize" && x.note === stamped.note);
         if (dup) continue;
       }
       seen.add(key);
@@ -207,7 +205,11 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
     }
   }
   all.sort((a, b) => {
-    if (a.at && b.at && a.at !== b.at) return a.at - b.at;
+    const aOk = a.at > 1e11;
+    const bOk = b.at > 1e11;
+    if (aOk && bOk) return a.at - b.at;
+    if (aOk && !bOk) return 1;
+    if (!aOk && bOk) return -1;
     return 0;
   });
   return fillMissingFrom(all);
