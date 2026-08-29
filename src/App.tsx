@@ -626,26 +626,26 @@ export default function App() {
   // Signed in, but the first state broadcast has not arrived yet.
   if (!gameState) {
     return (
-      <div className="min-h-screen bg-[#060412] text-white flex flex-col items-center justify-center p-4 font-sans">
-        <div className="relative w-24 h-24 flex items-center justify-center">
-          <div className="absolute inset-0 border-4 border-t-[#00FFFF] border-r-[#FF00FF] border-b-transparent border-l-transparent rounded-full animate-spin"></div>
-          <div className="text-[10px] font-mono tracking-widest text-[#00FFFF] uppercase animate-pulse">
-            CONNECT
-          </div>
+      <div className="h-[100dvh] w-full bg-[#060412] text-white flex items-center justify-center overflow-hidden">
+        <div className="relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black overflow-hidden">
+          <video
+            src="/Splash.mp4?v=9"
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <button
+            onClick={() => {
+              localStorage.clear();
+              window.location.reload();
+            }}
+            className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 text-[11px] font-mono text-white/50 hover:text-[#00FFAA] underline underline-offset-4"
+          >
+            Долго грузится? Войти заново
+          </button>
         </div>
-        <p className="text-sm font-mono text-gray-500 mt-6 uppercase tracking-widest">
-          Инициализация защищенного шлюза Hapstore...
-        </p>
-        <button
-          onClick={() => {
-            // A stale or rejected token would otherwise spin here forever.
-            localStorage.clear();
-            window.location.reload();
-          }}
-          className="mt-8 text-[11px] font-mono text-gray-600 hover:text-[#00FFFF] underline underline-offset-4"
-        >
-          Долго грузится? Войти заново
-        </button>
       </div>
     );
   }

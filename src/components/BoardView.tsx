@@ -463,12 +463,12 @@ export default function BoardView({
       {/* Immersive Full-Screen Video/Image Background */}
       <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <video
-          src="/BoardHAP.mp4?v=6"
+          src="/BoardHAP.mp4?v=9"
           autoPlay
           loop
           muted
           playsInline
-          poster="/BoardHAP.png?v=6"
+          poster="/BoardHAP.png?v=9"
           className="w-full h-full object-cover opacity-40 brightness-100 blur-[2px]"
           onError={(_e) => {
             console.error("App background video load error");
@@ -1067,9 +1067,14 @@ export default function BoardView({
           className="board-container relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black shadow-[0_0_80px_rgba(0,0,0,0.9)] flex-shrink-0"
         >
           {/* Background Map video */}
-          <img
-            src="/BoardHAP.png?v=7"
-            alt="Hapstore board"
+          <video
+            ref={boardVideoRef}
+            src="/BoardHAP.mp4?v=9"
+            autoPlay
+            loop
+            muted
+            playsInline
+            poster="/BoardHAP.png?v=9"
             className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
           />
 

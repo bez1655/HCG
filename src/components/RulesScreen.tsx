@@ -7,8 +7,14 @@ interface RulesScreenProps {
 }
 
 export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenProps) {
-  const bg = backgroundUrl || "/RulesHAP.mp4";
-  const isVideo = !bg || bg.endsWith(".mp4") || bg.endsWith(".mov") || bg.startsWith("data:video");
+  const pathOf = (u: string) => u.split("?")[0].toLowerCase();
+  const customIsVideo =
+    !!backgroundUrl &&
+    (pathOf(backgroundUrl).endsWith(".mp4") ||
+      pathOf(backgroundUrl).endsWith(".mov") ||
+      backgroundUrl.startsWith("data:video"));
+  const bg = customIsVideo ? backgroundUrl! : "/RulesHAP.mp4?v=9";
+  const isVideo = true;
 
   const handleProceed = () => {
     const tg = (window as any).Telegram?.WebApp;
@@ -44,7 +50,7 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
             loop
             muted
             playsInline
-            poster="/RulesHAP.png"
+            poster="/RulesHAP.png?v=9"
             className="absolute inset-0 w-full h-full object-cover z-0"
           ></video>
         ) : (

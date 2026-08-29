@@ -8,7 +8,7 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-08-28.2";
+export const BUILD = "2026-08-28.4";
 export const FEATURES = [
   "self-registration button",
   "password-free Telegram entry",

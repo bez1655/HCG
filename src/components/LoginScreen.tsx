@@ -40,8 +40,14 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
     if (notice) setErrorMsg(notice);
   }, [notice]);
 
-  const bg = backgroundUrl || "/Log.mp4";
-  const isVideo = !bg || bg.endsWith(".mp4") || bg.endsWith(".mov") || bg.startsWith("data:video");
+  const pathOf = (u: string) => u.split("?")[0].toLowerCase();
+  const customIsVideo =
+    !!backgroundUrl &&
+    (pathOf(backgroundUrl).endsWith(".mp4") ||
+      pathOf(backgroundUrl).endsWith(".mov") ||
+      backgroundUrl.startsWith("data:video"));
+  const bg = customIsVideo ? backgroundUrl! : "/Log.mp4?v=9";
+  const isVideo = true;
 
   React.useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
@@ -124,7 +130,7 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
             loop
             muted
             playsInline
-            poster="/Log.png"
+            poster="/Log.png?v=9"
             className="absolute inset-0 w-full h-full object-cover z-0"
           ></video>
         ) : (

@@ -352,7 +352,7 @@ const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-08-28.2";
+const SERVER_BUILD = "2026-08-28.4";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
