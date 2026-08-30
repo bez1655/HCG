@@ -42,6 +42,7 @@ export interface HistoryLine {
 }
 
 const ROLL_RE = /выбросил\s+(\d+)\s+и переместился на клетку\s+(\d+)/i;
+const EFFECT_RE = /с клетки\s+(\d+)\s+на клетку\s+(\d+)/i;
 const ADMIN_RE = /Клетка:\s*(\d+)\s*➔\s*(\d+)/;
 const RESTART_RE = /начал новый круг с клетки\s+(\d+)/i;
 const SKIP_RE = /пропустил ход/i;
@@ -51,12 +52,23 @@ const WIN_RE = /получил приз:\s*(.+?)(?:!|$)/i;
 export function classifyLogMessage(message: string): Omit<PlayerMove, "at" | "timeLabel"> | null {
   const roll = message.match(ROLL_RE);
   if (roll) {
+    const steps = Number(roll[1]);
+    const final = Number(roll[2]);
+    const effect = message.match(EFFECT_RE);
+    let fromCell: number | null = null;
+    if (effect) {
+      const landed = Number(effect[1]);
+      fromCell = Math.max(0, landed - steps);
+    } else if (steps > 0 && final - steps >= 0) {
+      fromCell = final - steps;
+    }
+    const rest = message.slice((roll.index ?? 0) + roll[0].length).replace(/^[.\s]+/, "").trim();
     return {
       kind: "roll",
-      fromCell: null,
-      toCell: Number(roll[2]),
-      steps: Number(roll[1]),
-      note: "",
+      fromCell,
+      toCell: final,
+      steps,
+      note: rest.slice(0, 200),
     };
   }
 
@@ -204,19 +216,31 @@ export function mergeMoves(...lists: PlayerMove[][]): PlayerMove[] {
       all.push(stamped);
     }
   }
-  const hasDatedRolls = all.some((m) => m.kind === "roll" && m.at > 1e11);
-  const kept = hasDatedRolls
+  const datedRolls = all.filter((m) => m.kind === "roll" && m.at > 1e11);
+  const firstDated = datedRolls[0];
+  const firstFrom = firstDated?.fromCell ?? firstDated?.toCell ?? null;
+  const kept = datedRolls.length
     ? all.filter((m) => {
-        if ((m.kind === "roll" || m.kind === "prize") && m.at < 1e11) return false;
-        return true;
+        if (m.at > 1e11) return true;
+        if (m.kind === "admin" || m.kind === "restart" || m.kind === "skip") return true;
+        if (m.kind === "prize") return false;
+        if (m.kind === "roll") {
+          if (m.toCell == null || firstFrom == null) return false;
+          return m.toCell <= firstFrom;
+        }
+        return false;
       })
     : all;
   kept.sort((a, b) => {
-    const aOk = a.at > 1e11;
-    const bOk = b.at > 1e11;
-    if (aOk && bOk) return a.at - b.at;
-    if (aOk && !bOk) return -1;
-    if (!aOk && bOk) return 1;
+    const rank = (m: PlayerMove) => {
+      if (m.at < 1e11 && m.kind === "roll") return 0;
+      if (m.at > 1e11) return 1;
+      return 2;
+    };
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (a.at > 1e11 && b.at > 1e11) return a.at - b.at;
     return 0;
   });
   return fillMissingFrom(kept);
@@ -419,7 +443,7 @@ export function formatPlayerHistoryHtml(history: PlayerHistory, cells?: Cell[]):
     `📜 <b>История игрока</b>\n` +
     `${who}\n` +
     `Сейчас: <b>${escapeHtml(cellTitle(history.cell, cells))}</b>\n` +
-    `Переходов: <b>${lines.length}</b>`;
+    `Ходов: <b>${lines.length}</b>`;
 
   if (lines.length === 0) {
     return head + "\n\nПеремещений в журнале нет.";

@@ -352,7 +352,7 @@ const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-08-29.3";
+const SERVER_BUILD = "2026-08-29.4";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -508,6 +508,9 @@ function queueCredentialsForBot(handle: string, password: string): void {
 
 /** Push a log entry and enforce the size cap. */
 function addLog(entry: GameLog) {
+  if (!entry.timestamp || !/\d{4}/.test(entry.timestamp)) {
+    entry.timestamp = new Date().toLocaleString("ru-RU");
+  }
   gameState.logs.unshift(entry);
   trimLogs();
 }

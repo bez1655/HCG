@@ -245,7 +245,18 @@ describe("player movement history", () => {
     ];
     const merged = mergeMoves(jsonl, ghost);
     expect(merged.filter((m) => m.steps === 2 && m.toCell === 6)).toHaveLength(1);
-    expect(merged.find((m) => m.steps === 4 && m.toCell === 4)).toBeUndefined();
+    expect(merged.find((m) => m.steps === 4 && m.toCell === 4)?.toCell).toBe(4);
+    expect(merged[0].toCell).toBe(4);
+  });
+
+  it("parses a roll with a penalty in the same log line", () => {
+    const m = classifyLogMessage(
+      "🎲 Бэтмен выбросил 6 и переместился на клетку 9. Сработал откат системы! Смещение назад на 3 клетки (с клетки 12 на клетку 9)."
+    );
+    expect(m?.kind).toBe("roll");
+    expect(m?.steps).toBe(6);
+    expect(m?.fromCell).toBe(6);
+    expect(m?.toCell).toBe(9);
   });
 
   it("keeps an undated admin move after dated rolls", () => {
