@@ -31,6 +31,15 @@ describe("registration queue", () => {
     expect(getRequest("@NEO")?.telegramId).toBe(1);
   });
 
+  it("treats a new handle from the same telegramId as the same pending request", () => {
+    addRequest({ username: "@old", telegramId: 9, chatId: 1 });
+    const second = addRequest({ username: "@new", telegramId: 9, chatId: 1 });
+    expect(second.result).toBe("duplicate");
+    expect(listRequests()).toHaveLength(1);
+    expect(getRequest("@new")?.telegramId).toBe(9);
+    expect(getRequest("@old")).toBeUndefined();
+  });
+
   it("reports a repeated request as a duplicate instead of queueing twice", () => {
     addRequest({ username: "@neo", telegramId: 1, chatId: 10 });
     const second = addRequest({ username: "@neo", telegramId: 1, chatId: 10 });

@@ -103,6 +103,8 @@ export async function submitRegistration(
   const data = (await res.json().catch(() => ({}))) as {
     status?: string;
     error?: string;
+    name?: string;
+    alias?: string | null;
   };
 
   if (!res.ok) {
@@ -114,9 +116,14 @@ export async function submitRegistration(
   }
 
   if (data.status === "already_registered") {
+    const shown =
+      data.name && data.name.toLowerCase() !== handle.toLowerCase()
+        ? `${escapeHtml(data.name)} (ник обновлён)`
+        : escapeHtml(data.name || handle);
     return {
       reply:
-        `✅ Вы уже зарегистрированы, ${escapeHtml(handle)}!\n\n` +
+        `✅ Вы уже в игре: ${shown}.\n\n` +
+        `Смена @ в Telegram не создаёт нового игрока — это тот же аккаунт.\n` +
         `Нажмите «🎮 ИГРАТЬ» — пароль вводить не нужно.`,
       notifyAdmins: false,
       handle,

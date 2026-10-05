@@ -8,8 +8,11 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-08-29.4";
+export const BUILD = "2026-10-04.2";
 export const FEATURES = [
+  "login is current @ only, cannot type someone else's handle",
+  "same telegram id stays one player after @ rename",
+  "telegram handle refresh by numeric id",
   "self-registration button",
   "password-free Telegram entry",
   "two-stage Docker build",

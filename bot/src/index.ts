@@ -137,9 +137,18 @@ function loadTelegramUsers() {
   }
 }
 
-function saveTelegramUser(username?: string, chatId?: number) {
-  if (!username || !chatId) return;
-  telegramUsers[normaliseHandle(username)] = chatId;
+function saveTelegramUser(username?: string, chatId?: number, telegramId?: number) {
+  if (!chatId) return;
+  if (telegramId) telegramUsers[`id:${telegramId}`] = chatId;
+  if (username) {
+    const key = normaliseHandle(username);
+    telegramUsers[key] = chatId;
+    for (const [k, v] of Object.entries(telegramUsers)) {
+      if (v === chatId && k !== key && k !== `id:${telegramId}` && k.startsWith("@")) {
+        delete telegramUsers[k];
+      }
+    }
+  }
   try {
     fs.writeFileSync(TELEGRAM_USERS_FILE, JSON.stringify(telegramUsers, null, 2));
   } catch (e) {
@@ -198,17 +207,23 @@ function playerKeyboard(registered: boolean) {
 // Capture the @username -> chatId mapping. The bot is the single Telegram
 // long-polling consumer, so it forwards what it observes to the game server
 // (which used to run its own competing getUpdates loop).
-bot.use(async (ctx, next) => {
-  if (ctx.from?.username && ctx.chat?.id) {
-    const formatted = normaliseHandle(ctx.from.username);
-    const chatId = ctx.chat.id;
-    const alreadyKnown = telegramUsers[formatted] === chatId;
-    saveTelegramUser(ctx.from.username, chatId);
+const lastSyncedHandle = new Map<number, string>();
 
-    if (!alreadyKnown) {
+bot.use(async (ctx, next) => {
+  if (ctx.from?.id && ctx.chat?.id) {
+    const chatId = ctx.chat.id;
+    const formatted = ctx.from.username ? normaliseHandle(ctx.from.username) : "";
+    saveTelegramUser(ctx.from.username, chatId, ctx.from.id);
+    const prev = lastSyncedHandle.get(ctx.from.id);
+    if (formatted && prev !== formatted) {
+      lastSyncedHandle.set(ctx.from.id, formatted);
       internalFetch("/api/internal/telegram-user", {
         method: "POST",
-        body: JSON.stringify({ username: formatted, chatId }),
+        body: JSON.stringify({
+          username: formatted,
+          chatId,
+          telegramId: ctx.from.id,
+        }),
       }).catch((e) =>
         console.warn("[Bot] Could not sync telegram user mapping to server:", e?.message || e)
       );
@@ -228,12 +243,13 @@ bot.use(async (ctx, next) => {
  * failure degrades to "show the registration button", which is harmless
  * because the server rejects a duplicate request anyway.
  */
-async function isRegistered(username?: string): Promise<boolean> {
-  if (!username) return false;
+async function isRegistered(username?: string, telegramId?: number): Promise<boolean> {
+  if (!username && !telegramId) return false;
   try {
-    const res = await internalFetch(
-      `/api/internal/player-status?username=${encodeURIComponent(normaliseHandle(username))}`
-    );
+    const q = new URLSearchParams();
+    if (username) q.set("username", normaliseHandle(username));
+    if (telegramId) q.set("telegramId", String(telegramId));
+    const res = await internalFetch(`/api/internal/player-status?${q.toString()}`);
     if (!res.ok) return false;
     const data = (await res.json()) as { registered?: boolean };
     return data.registered === true;
@@ -251,7 +267,7 @@ const WELCOME = (name: string, registered: boolean) =>
 
 bot.start(async (ctx) => {
   const display = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
-  const registered = await isRegistered(ctx.from.username);
+  const registered = await isRegistered(ctx.from.username, ctx.from.id);
 
   await ctx.reply(WELCOME(display, registered), {
     parse_mode: "HTML",
@@ -326,7 +342,7 @@ bot.command("play", async (ctx) => {
   if (!WEB_APP_URL) {
     return ctx.reply("⚠️ Адрес игры не настроен. Сообщите администратору.");
   }
-  const registered = await isRegistered(ctx.from.username);
+  const registered = await isRegistered(ctx.from.username, ctx.from.id);
   if (!registered) {
     return ctx.reply(
       "Вы ещё не зарегистрированы. Отправьте /register — администратор подтвердит заявку.",
@@ -384,7 +400,8 @@ const ADMIN_HELP_TEXT =
   "/set_admin @username — добавить администратора\n" +
   "/del_admin @username — снять администратора\n" +
   "/list_admins — список (только вам)\n" +
-  "/reload_admins — перечитать список\n\n" +
+  "/reload_admins — перечитать список\n" +
+  "/sync_names — обновить @ники игроков из Telegram\n\n" +
   "<b>Общие</b>\n" +
   "/start · /play · /help\n\n" +
   "<i>Кого угодно можно назвать и псевдонимом, и настоящим @хендлом — " +
@@ -977,6 +994,77 @@ bot.command("reload_admins", adminManager.middleware(), async (ctx) => {
   );
 });
 
+
+async function refreshHandlesFromTelegram(): Promise<{
+  checked: number;
+  renamed: number;
+  skipped: number;
+  lines: string[];
+}> {
+  const res = await internalFetch("/api/internal/telegram-bindings");
+  if (!res.ok) throw new Error("сервер не отдал список привязок");
+  const data = (await res.json()) as {
+    players?: Array<{ id: string; telegramId?: number; name: string; alias: string | null }>;
+  };
+  const players = data.players || [];
+  let renamed = 0;
+  let skipped = 0;
+  const lines: string[] = [];
+
+  for (const p of players) {
+    if (!p.telegramId) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const chat = (await bot.telegram.getChat(p.telegramId)) as {
+        username?: string;
+        id: number;
+      };
+      const username = chat.username;
+      if (!username) {
+        skipped += 1;
+        continue;
+      }
+      const formatted = normaliseHandle(username);
+      saveTelegramUser(username, p.telegramId, p.telegramId);
+      await internalFetch("/api/internal/telegram-user", {
+        method: "POST",
+        body: JSON.stringify({
+          username: formatted,
+          chatId: p.telegramId,
+          telegramId: p.telegramId,
+        }),
+      });
+      if (formatted.toLowerCase() !== (p.name || "").toLowerCase()) {
+        renamed += 1;
+        lines.push(
+          `${escapeHtml(p.alias || p.id)}: ${escapeHtml(p.name)} → ${escapeHtml(formatted)}`
+        );
+      }
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  return { checked: players.length, renamed, skipped, lines };
+}
+
+bot.command("sync_names", adminManager.middleware(), async (ctx) => {
+  await ctx.reply("Обновляю @ники из Telegram…");
+  try {
+    const r = await refreshHandlesFromTelegram();
+    const body =
+      r.lines.length > 0 ? "\n\n" + r.lines.slice(0, 30).join("\n") : "\nИзменений нет.";
+    return ctx.reply(
+      `🔄 Проверено: <b>${r.checked}</b>\nОбновлено: <b>${r.renamed}</b>\nПропущено: <b>${r.skipped}</b>${body}`,
+      { parse_mode: "HTML" }
+    );
+  } catch (e: any) {
+    return ctx.reply(`⚠️ ${escapeHtml(e.message || String(e))}`, { parse_mode: "HTML" });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Registration decisions
 // ---------------------------------------------------------------------------
@@ -1303,7 +1391,9 @@ bot.action(/reject_turn:(.+)/, async (ctx) => {
 export async function sendDirectMessageToUser(username: string, message: string) {
   loadTelegramUsers();
   const formatted = normaliseHandle(username);
-  const chatId = telegramUsers[formatted];
+  const chatId =
+    telegramUsers[formatted] ||
+    telegramUsers[`id:${username}`];
 
   if (chatId) {
     await asyncQueue.sendMessage(chatId, message);
@@ -1655,6 +1745,12 @@ if (BOT_TOKEN) {
         clearTimeout(watchdog);
         console.log("🤖 Telegram Bot started successfully via Long Polling!");
         console.log("[Config]", JSON.stringify(describeBotConfig(), null, 2));
+        const handleTimer = setInterval(() => {
+          void refreshHandlesFromTelegram().catch((e) =>
+            console.warn("[HCG bot] handle refresh failed:", e?.message || e)
+          );
+        }, 6 * 60 * 60 * 1000);
+        handleTimer.unref?.();
       })
       .catch((err) => {
         clearTimeout(watchdog);

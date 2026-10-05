@@ -86,6 +86,21 @@ export function addRequest(
     return { result: "duplicate", request: existing };
   }
 
+  if (input.telegramId) {
+    const byId = Object.values(pending).find((r) => r.telegramId === input.telegramId);
+    if (byId) {
+      if (byId.username !== username) {
+        delete pending[byId.username];
+        byId.username = username;
+        pending[username] = byId;
+      }
+      if (input.chatId) byId.chatId = input.chatId;
+      if (input.firstName) byId.firstName = input.firstName;
+      persist();
+      return { result: "duplicate", request: byId };
+    }
+  }
+
   const request: RegistrationRequest = {
     username,
     telegramId: input.telegramId,

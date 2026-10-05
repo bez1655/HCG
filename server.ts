@@ -13,6 +13,11 @@ import { choosePersistedState } from "./src/persistence/chooseState";
 import { resolveMove, isMilestone } from "./src/game/rules";
 import { pickAlias, publicName } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
+import {
+  applyTelegramHandle,
+  findPlayerByTelegram,
+  isCurrentLoginHandle,
+} from "./src/game/telegramIdentity";
 // Правило видимости применяет клиент (доска и админка); серверу нужны только
 // проверка настройки и значение по умолчанию.
 import { normaliseHideAfterHours, DEFAULT_HIDE_AFTER_HOURS, isTokenVisible } from "./src/game/presence";
@@ -284,6 +289,7 @@ function maskPlayer(p: Player): Player {
   const masked: Player = { ...p, name: publicName(p) };
   delete masked.telegramId;
   delete masked.telegramUsername;
+  delete masked.previousHandles;
   delete masked.prizeLog;
   delete masked.lastTurnReminderAt;
   return masked;
@@ -352,7 +358,7 @@ const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-08-29.4";
+const SERVER_BUILD = "2026-10-04.2";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1066,23 +1072,18 @@ async function registerApprovedPlayer(
 ): Promise<RegistrationOutcome> {
   const handle = normaliseHandle(username);
 
-  const existing = gameState.players.find((p) => p.name.toLowerCase() === handle);
+  const existing = findPlayerByTelegram(gameState.players, {
+    telegramId: options.telegramId,
+    handle,
+  });
   if (existing) {
-    // Idempotent: re-approving an existing player only refreshes the binding.
-    let changed = false;
+    // Same Telegram account (id is stable). A renamed @ must not create a second chip.
     if (options.telegramId && existing.telegramId !== options.telegramId) {
       existing.telegramId = options.telegramId;
-      changed = true;
     }
-    const bareHandle = handle.slice(1);
-    if (existing.telegramUsername !== bareHandle) {
-      existing.telegramUsername = bareHandle;
-      changed = true;
-    }
-    if (changed) {
-      saveState();
-      broadcastSlices("players");
-    }
+    applyTelegramHandle(gameState.players, existing, handle);
+    saveState();
+    broadcastSlices("players");
     return { created: false, player: existing };
   }
 
@@ -1745,9 +1746,28 @@ async function start() {
     if (!syncParsed.ok) {
       return res.status(400).json({ error: syncParsed.error });
     }
-    const { username, chatId } = syncParsed.data;
+    const { username, chatId, telegramId } = syncParsed.data;
     rememberTelegramUser(username, chatId);
-    res.json({ success: true });
+    const handle = normaliseHandle(username);
+    const player = findPlayerByTelegram(gameState.players, { telegramId, handle });
+    if (player) {
+      if (telegramId && player.telegramId !== telegramId) player.telegramId = telegramId;
+      const sync = applyTelegramHandle(gameState.players, player, handle);
+      if (sync.renamed) {
+        log.info("Telegram handle updated", {
+          player: player.id,
+          from: sync.previousName,
+          to: player.name,
+        });
+        void sendTelegramMessageToAdmin(
+          `🔄 Смена @ника\n${escapeHtml(player.alias || player.id)}\n` +
+            `<code>${escapeHtml(sync.previousName)}</code> → <code>${escapeHtml(player.name)}</code>`
+        );
+      }
+      saveState();
+      broadcastSlices("players");
+    }
+    res.json({ success: true, renamed: Boolean(player && (player.name === handle)) });
   });
 
   /**
@@ -1767,7 +1787,7 @@ async function start() {
       }
       const cleanUser = normaliseHandle(regReqParsed.data.username);
 
-      if (gameState.players.some((p) => p.name.toLowerCase() === cleanUser)) {
+      if (findPlayerByTelegram(gameState.players, { handle: cleanUser })) {
         return res.status(409).json({ error: "Этот игрок уже зарегистрирован" });
       }
 
@@ -1810,24 +1830,18 @@ async function start() {
     const { username, telegramId, chatId, firstName } = parsed.data;
     const handle = normaliseHandle(username);
 
-    const existing = gameState.players.find((p) => p.name.toLowerCase() === handle);
+    const existing = findPlayerByTelegram(gameState.players, { telegramId, handle });
     if (existing) {
-      // Already a player: refresh the binding so password-free entry works
-      // even for accounts registered before this feature existed.
-      let changed = false;
-      if (existing.telegramId !== telegramId) {
-        existing.telegramId = telegramId;
-        changed = true;
-      }
-      if (existing.telegramUsername !== handle.slice(1)) {
-        existing.telegramUsername = handle.slice(1);
-        changed = true;
-      }
-      if (changed) {
-        saveState();
-        broadcastSlices("players");
-      }
-      return res.json({ success: true, status: "already_registered", name: existing.name });
+      if (existing.telegramId !== telegramId) existing.telegramId = telegramId;
+      applyTelegramHandle(gameState.players, existing, handle);
+      saveState();
+      broadcastSlices("players");
+      return res.json({
+        success: true,
+        status: "already_registered",
+        name: existing.name,
+        alias: existing.alias ?? null,
+      });
     }
 
     const { result } = addRegistrationRequest({ username: handle, telegramId, chatId, firstName });
@@ -1846,15 +1860,33 @@ async function start() {
    */
   app.get("/api/internal/player-status", requireInternalAuth, (req, res) => {
     const raw = typeof req.query.username === "string" ? req.query.username : "";
-    if (!raw) return res.status(400).json({ error: "username is required" });
+    const idRaw = typeof req.query.telegramId === "string" ? Number(req.query.telegramId) : 0;
+    const telegramId = Number.isFinite(idRaw) && idRaw > 0 ? idRaw : undefined;
+    if (!raw && !telegramId) return res.status(400).json({ error: "username is required" });
 
-    const handle = normaliseHandle(raw);
-    const player = gameState.players.find((p) => p.name.toLowerCase() === handle);
+    const handle = raw ? normaliseHandle(raw) : null;
+    const player = findPlayerByTelegram(gameState.players, { telegramId, handle });
     res.json({
       success: true,
       registered: Boolean(player),
-      pending: Boolean(listRegistrationRequests().find((r) => r.username === handle)),
+      pending: Boolean(
+        handle && listRegistrationRequests().find((r) => r.username === handle)
+      ),
+      name: player?.name,
     });
+  });
+
+  /** Bindings the bot needs to refresh @handles via getChat(telegramId). */
+  app.get("/api/internal/telegram-bindings", requireInternalAuth, (_req, res) => {
+    const rows = gameState.players
+      .filter((p) => p.role === "player" && p.telegramId)
+      .map((p) => ({
+        id: p.id,
+        telegramId: p.telegramId,
+        name: p.name,
+        alias: p.alias ?? null,
+      }));
+    res.json({ success: true, players: rows });
   });
 
   /**
@@ -2139,7 +2171,7 @@ async function start() {
       player.isOnline = true;
       // Отметка присутствия: по ней фишка остаётся на доске.
       player.lastSeenAt = Date.now();
-      if (handle) player.telegramUsername = handle.slice(1);
+      if (handle) applyTelegramHandle(gameState.players, player, handle);
       if (!player.chipImage) player.chipImage = getRandomChipImage(takenChips());
       if (parsed.data.color) player.color = parsed.data.color;
 
@@ -2450,16 +2482,44 @@ async function start() {
         return res.status(403).json({ error: "Неверный логин или пароль" });
       }
 
-      // Standard player entry
-      const existingPlayer = gameState.players.find((p) => p.name.toLowerCase() === lowerName);
+      const typedHandle = lowerName.startsWith("@") ? lowerName : `@${lowerName}`;
+      const claimedTgId = loginParsed.data.telegramId;
+      const claimedTgUser = loginParsed.data.telegramUsername
+        ? loginParsed.data.telegramUsername.replace(/^@/, "").toLowerCase()
+        : "";
 
-      // If player exists, let them reconnect securely
+      if (claimedTgUser) {
+        const typedBare = typedHandle.replace(/^@/, "");
+        if (typedBare !== claimedTgUser) {
+          return res.status(403).json({
+            error:
+              "В поле логина должен быть ваш текущий Telegram @username, чужой ник вводить нельзя.",
+          });
+        }
+      }
+
+      // Login is the CURRENT @ only. Old handles and aliases are not accepted.
+      const existingPlayer = gameState.players.find((p) => isCurrentLoginHandle(p, typedHandle));
+
       if (existingPlayer) {
+        if (claimedTgId) {
+          if (existingPlayer.telegramId && existingPlayer.telegramId !== claimedTgId) {
+            return res.status(403).json({
+              error: "Этот логин принадлежит другому Telegram-аккаунту.",
+            });
+          }
+          const owner = gameState.players.find((p) => p.telegramId === claimedTgId);
+          if (owner && owner.id !== existingPlayer.id) {
+            return res.status(403).json({
+              error: "Этот Telegram уже привязан к другому игроку. Чужой логин использовать нельзя.",
+            });
+          }
+        }
+
         const storedPass = authPasswords[existingPlayer.id];
         if (storedPass && !(await verifyPassword(password || "", storedPass))) {
           return res.status(403).json({ error: "Неверный пароль" });
         }
-        // If user logged in using legacy format, auto-upgrade entry to salted hash
         if (storedPass && !storedPass.includes(":")) {
           authPasswords[existingPlayer.id] = await hashPassword(password || "");
           saveState();
@@ -2470,10 +2530,7 @@ async function start() {
           existingPlayer.chipImage = getRandomChipImage(takenChips());
         }
         if (color) existingPlayer.color = color;
-        if (loginParsed.data.telegramId) existingPlayer.telegramId = loginParsed.data.telegramId;
-        if (loginParsed.data.telegramUsername) {
-          existingPlayer.telegramUsername = loginParsed.data.telegramUsername;
-        }
+        if (claimedTgId && !existingPlayer.telegramId) existingPlayer.telegramId = claimedTgId;
         saveState();
         return res.json({
           success: true,

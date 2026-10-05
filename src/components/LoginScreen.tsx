@@ -33,6 +33,7 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
   const [selectedColor, setSelectedColor] = useState("#D4A017");
   const [errorMsg, setErrorMsg] = useState(notice || "");
   const [loading, setLoading] = useState(false);
+  const [handleLocked, setHandleLocked] = useState(false);
 
   // A notice arriving after mount (the Telegram handshake resolves
   // asynchronously) must still reach the user.
@@ -51,13 +52,10 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
 
   React.useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
-    if (tg) {
-      if (tg.initDataUnsafe?.user?.username) {
-        setName("@" + tg.initDataUnsafe.user.username);
-      } else if (tg.initDataUnsafe?.user?.first_name) {
-        const sanitizedName = tg.initDataUnsafe.user.first_name.replace(/\s+/g, "").toLowerCase();
-        setName("@" + sanitizedName);
-      }
+    const fromTg = tg?.initDataUnsafe?.user?.username;
+    if (fromTg) {
+      setName("@" + fromTg);
+      setHandleLocked(true);
     }
   }, []);
 
@@ -157,9 +155,13 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Например: @neon"
-            maxLength={20}
+            readOnly={handleLocked}
+            onChange={(e) => {
+              if (!handleLocked) setName(e.target.value);
+            }}
+            placeholder="@username"
+            maxLength={33}
+            autoComplete="username"
             className="absolute top-[48.3%] left-[21.5%] w-[57%] h-[4.6%] bg-transparent text-white px-4 text-sm md:text-base focus:outline-none rounded-lg font-sans placeholder-gray-500 font-medium"
             style={{ height: "22px", width: "125px", marginLeft: "43px", marginTop: "57px" }}
           />

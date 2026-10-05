@@ -88,6 +88,8 @@ export interface Player {
   chipImage?: string;
   telegramId?: number;
   telegramUsername?: string;
+  /** Previous Telegram @handles after a rename — login by the old one still works. */
+  previousHandles?: string[];
   activeBonus?: ActiveBonus | null;
   /** Personal prize cabinet. Not shown to other players. */
   prizeLog?: PrizeRecord[];

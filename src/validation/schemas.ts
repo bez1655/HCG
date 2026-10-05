@@ -136,6 +136,7 @@ export const adminPasswordsSchema = z.object({
 export const telegramUserSyncSchema = z.object({
   username: telegramUsername,
   chatId: z.number().int(),
+  telegramId: z.number().int().positive().optional(),
 });
 
 // --- Socket.IO -------------------------------------------------------------

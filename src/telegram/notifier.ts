@@ -37,7 +37,14 @@ function normalise(username: string): string {
 }
 
 export function getChatId(username: string): number | undefined {
-  return telegramUsers[normalise(username)];
+  const key = normalise(username);
+  if (telegramUsers[key]) return telegramUsers[key];
+  if (/^id:\d+$/.test(username)) return telegramUsers[username];
+  return undefined;
+}
+
+export function getChatIdByTelegramId(telegramId: number): number | undefined {
+  return telegramUsers[`id:${telegramId}`] ?? telegramUsers[String(telegramId)];
 }
 
 /** Record a mapping. Returns true when something actually changed. */
