@@ -8,8 +8,9 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-10-04.2";
+export const BUILD = "2026-10-07.1";
 export const FEATURES = [
+  "public origin hapstore.cyber-game.online",
   "login is current @ only, cannot type someone else's handle",
   "same telegram id stays one player after @ rename",
   "telegram handle refresh by numeric id",

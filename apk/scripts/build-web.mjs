@@ -56,7 +56,7 @@ if (!apiBase) {
   console.error("\n❌ Не задан адрес игрового сервера.\n");
   console.error("   Создайте файл apk/.env со строкой:");
   console.error("       VITE_API_BASE_URL=https://ваш-домен\n");
-  console.error("   Пример: VITE_API_BASE_URL=https://hcg.bez12.store\n");
+  console.error("   Пример: VITE_API_BASE_URL=https://hapstore.cyber-game.online\n");
   process.exit(1);
 }
 
@@ -65,7 +65,7 @@ try {
   parsed = new URL(apiBase);
 } catch {
   console.error(`\n❌ VITE_API_BASE_URL не похож на адрес: "${apiBase}"`);
-  console.error("   Ожидается, например: https://hcg.bez12.store\n");
+  console.error("   Ожидается, например: https://hapstore.cyber-game.online\n");
   process.exit(1);
 }
 

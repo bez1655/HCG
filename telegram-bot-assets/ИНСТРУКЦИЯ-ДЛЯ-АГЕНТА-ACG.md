@@ -12,7 +12,7 @@
 |---|---|---|
 | Каталог на VPS | `/var/www/hcg` | `/var/www/ali` (или актуальный путь Али) |
 | Контейнеры | `hcg_app` `hcg_bot` `hcg_proxy` | `ali_*` |
-| Домен | `hcg.bez12.store` | `ali.bez12.store` |
+| Домен | `hapstore.cyber-game.online` | `ali.bez12.store` |
 | Бот | свой токен, не HCG | свой токен в `.env` Али |
 | Package id APK | `store.bez12.hcg` | `store.bez12.ali` |
 | Порт | 3001→3000 | свой (часто 3002) |

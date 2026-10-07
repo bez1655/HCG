@@ -9,7 +9,7 @@
  */
 interface ImportMetaEnv {
   /**
-   * Absolute origin of the game server, e.g. https://hcg.bez12.store
+   * Absolute origin of the game server, e.g. https://hapstore.cyber-game.online
    *
    * Empty in the browser build (the client is served by the server itself).
    * Required for the standalone Android build, which has no server of its own.

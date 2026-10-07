@@ -51,7 +51,7 @@ Telegram, и наоборот.
 В папке `apk` создайте файл `.env`:
 
 ```
-VITE_API_BASE_URL=https://hcg.bez12.store
+VITE_API_BASE_URL=https://hapstore.cyber-game.online
 ```
 
 Замените на свой домен, если он другой.
@@ -80,7 +80,7 @@ npm run build:web
 
 ```
 ✅ Готово: apk/www
-   Адрес сервера вшит в сборку: https://hcg.bez12.store
+   Адрес сервера вшит в сборку: https://hapstore.cyber-game.online
 ```
 
 ### Шаг 4. Создать Android-проект
