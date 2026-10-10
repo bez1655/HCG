@@ -1,5 +1,5 @@
 import React from "react";
-import { playSound } from "../utils/sounds";
+import { playSound, bindVideoSoundtrack } from "../utils/sounds";
 
 interface RulesScreenProps {
   backgroundUrl?: string | null;

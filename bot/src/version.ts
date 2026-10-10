@@ -8,7 +8,7 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-10-10.5";
+export const BUILD = "2026-10-10.6";
 export const FEATURES = [
   "horror alias swap on next login",
   "halloween chips and horror aliases",
