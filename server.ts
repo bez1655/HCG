@@ -4099,6 +4099,10 @@ async function start() {
     return res.json({ ok: true });
   });
 
+  app.get("/privacy", (_req, res) => {
+    res.redirect(302, "/privacy.html");
+  });
+
   app.get("/healthz", (req, res) => {
     res.json({
       status: "ok",
