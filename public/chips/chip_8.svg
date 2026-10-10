@@ -1,53 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-    <defs>
-      <!-- Base Metallic Gradients -->
-      <radialGradient id="metalGrad" cx="35%" cy="30%" r="70%">
-        <stop offset="0%" stop-color="#38444d" />
-        <stop offset="50%" stop-color="#1f2933" />
-        <stop offset="100%" stop-color="#0b0f14" />
-      </radialGradient>
-
-      <radialGradient id="sphereGrad" cx="30%" cy="25%" r="75%">
-        <stop offset="0%" stop-color="#485665" />
-        <stop offset="40%" stop-color="#212932" />
-        <stop offset="85%" stop-color="#0c1015" />
-        <stop offset="100%" stop-color="#05070a" />
-      </radialGradient>
-
-      <!-- Placeholder Neon Glow gradient (will be dynamically colored via CSS/JS or default cyber cyan/green) -->
-      <!-- Свечение фишки. Цвет подставляется на стороне приложения из
-           профиля игрока (см. src/components/ChipImage.tsx): фишка должна
-           светиться тем цветом, который человек выбрал при входе, а не
-           одинаковым зелёно-голубым у всех.
-           Значения в var(...) — запасные, на случай показа вне игры. -->
-      <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="var(--chip-glow, #00ffaa)" />
-        <stop offset="100%" stop-color="var(--chip-glow-2, #00ccff)" />
-      </linearGradient>
-
-      <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="8" result="blur" />
-        <feMerge>
-          <feMergeNode in="blur" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
-
-      <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#000" flood-opacity="0.8" />
-      </filter>
-    </defs>
-
+  <defs>
+    <radialGradient id="metalc8" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#3d2a1a"/>
+      <stop offset="55%" stop-color="#1a120c"/>
+      <stop offset="100%" stop-color="#070504"/>
+    </radialGradient>
+    <linearGradient id="neonGlowc8" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="var(--chip-glow, #ff7a18)"/>
+      <stop offset="100%" stop-color="var(--chip-glow-2, #ffd36a)"/>
+    </linearGradient>
+    <filter id="glowc8" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
     
-        <ellipse cx="256" cy="420" rx="130" ry="20" fill="none" stroke="url(#neonGlow)" stroke-width="6" filter="url(#glow)" />
-        <!-- Capsule Shell -->
-        <path d="M 130 200 C 130 90, 382 90, 382 200 L 360 320 L 256 370 L 152 320 Z" fill="url(#sphereGrad)" stroke="#30363d" stroke-width="8" />
-        <!-- Visor Band -->
-        <path d="M 140 180 Q 256 220 372 180 L 368 220 Q 256 260 144 220 Z" fill="url(#neonGlow)" filter="url(#glow)" />
-        <!-- Lower Thruster Pipes -->
-        <rect x="200" y="340" width="20" height="40" fill="#161b22" stroke="url(#neonGlow)" stroke-width="2" />
-        <rect x="292" y="340" width="20" height="40" fill="#161b22" stroke="url(#neonGlow)" stroke-width="2" />
-        <circle cx="256" cy="280" r="30" fill="#000" stroke="url(#neonGlow)" stroke-width="4" />
-        <circle cx="256" cy="280" r="15" fill="#fff" filter="url(#glow)" />
-      
-  </svg>
+  </defs>
+  <circle cx="256" cy="256" r="220" fill="#120a06" stroke="#2a1810" stroke-width="18"/>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#4a2c14" stroke-width="6" stroke-dasharray="10 14"/>
+  <circle cx="256" cy="256" r="172" fill="url(#metalc8)" stroke="#5a3a20" stroke-width="5"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="url(#neonGlowc8)" stroke-width="12" filter="url(#glowc8)"/>
+  <circle cx="256" cy="256" r="128" fill="#140c08"/>
+  <!-- raven -->
+<path d="M300 220c-20-8-50-4-70 16-8-22-28-36-54-32 16 10 22 28 18 40-28 8-48 34-44 64 22-16 48-16 66-8-6 18 2 36 18 48 6-16 8-32 4-46 24 4 52-8 70-28-8 22 2 44 22 56-4-28-8-54-30-110z" fill="#1a1210"/>
+<polygon points="176,244 148,236 176,256" fill="#ff7a18"/>
+<circle cx="200" cy="248" r="5" fill="#ffd36a"/>
+</svg>

@@ -396,6 +396,7 @@ const ADMIN_HELP_TEXT =
   "/prizes &lt;кого&gt; — кабинет призов\n" +
   "/report — отчёт за день\n\n" +
   "<b>Журнал и администраторы</b>\n" +
+  "/journal [кого] — журнал запросов хода (просил / выдано)\n" +
   "/admin_logs [поиск] — журнал игры\n" +
   "/set_admin @username — добавить администратора\n" +
   "/del_admin @username — снять администратора\n" +
@@ -903,6 +904,37 @@ bot.command("proxies", adminManager.middleware(), async (ctx) => {
 /**
  * /history <кого> — все перемещения одного игрока.
  */
+bot.command("journal", adminManager.middleware(), async (ctx) => {
+  const target = ctx.message.text.replace(/^\/journal(@\S+)?\s*/i, "").trim();
+  try {
+    const q = target ? `?target=${encodeURIComponent(target)}` : "";
+    const res = await internalFetch(`/api/admin/turn-journal${q}`);
+    const data = (await res.json()) as {
+      success?: boolean;
+      error?: string;
+      html?: string;
+      text?: string;
+      total?: number;
+    };
+    if (!res.ok || !data.success) {
+      return ctx.reply(`❌ ${escapeHtml(data.error || "Не удалось получить журнал")}`, {
+        parse_mode: "HTML",
+      });
+    }
+    await ctx.reply(data.html || "Пусто", { parse_mode: "HTML" });
+    const full = data.text || "";
+    if (full.length > 3500 || (data.total && data.total > 40)) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      await ctx.replyWithDocument({
+        source: Buffer.from(full, "utf-8"),
+        filename: `HCG-журнал-ходов-${stamp}.txt`,
+      });
+    }
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
+  }
+});
+
 bot.command("history", adminManager.middleware(), async (ctx) => {
   const target = ctx.message.text.replace(/^\/history(@\S+)?\s*/i, "").trim();
   if (!target) {

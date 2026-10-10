@@ -47,6 +47,10 @@ export interface Player {
    * купивший товар, больше не раскрывает свой аккаунт другим участникам.
    */
   alias?: string;
+  /** Previous public alias, kept after the Halloween rename. */
+  previousAlias?: string;
+  /** Horror name reserved until the player next opens the game. */
+  pendingHorrorAlias?: string;
   role: "admin" | "player";
   cell: number;
   color: string;

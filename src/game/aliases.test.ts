@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName } from "./aliases";
+import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isHorrorAlias } from "./aliases";
 
 /**
  * Псевдонимы закрывают Telegram-хендл игрока от остальных участников.
@@ -22,8 +22,8 @@ describe("список псевдонимов", () => {
     expect(ALIAS_POOL.filter((a) => a.includes("@"))).toEqual([]);
   });
 
-  it("собран из заявленных вселенных", () => {
-    for (const hero of ["Железный Человек", "Бэтмен", "Йода", "Фродо", "Гарри Поттер"]) {
+  it("собран из хоррор-вселенных", () => {
+    for (const hero of ["Майкл Майерс", "Фредди Крюгер", "Пеннивайз", "Рипли", "Джигсо"]) {
       expect(ALIAS_POOL).toContain(hero);
     }
   });
@@ -44,8 +44,8 @@ describe("выдача псевдонима", () => {
   });
 
   it("не считает занятым имя в другом регистре", () => {
-    const alias = pickAlias(["железный человек"]);
-    expect(alias.toLowerCase()).not.toBe("железный человек");
+    const alias = pickAlias(["майкл майерс"]);
+    expect(alias.toLowerCase()).not.toBe("майкл майерс");
   });
 
   it("продолжает выдавать имена, когда весь список исчерпан", () => {
@@ -64,6 +64,12 @@ describe("выдача псевдонима", () => {
       expect(extra).not.toContain("@");
       taken.push(extra);
     }
+  });
+
+  it("recognises horror pool names", () => {
+    expect(isHorrorAlias("Пеннивайз")).toBe(true);
+    expect(isHorrorAlias("Пеннивайз 2")).toBe(true);
+    expect(isHorrorAlias("Шторм")).toBe(false);
   });
 
   it("уважает переданный источник случайности", () => {

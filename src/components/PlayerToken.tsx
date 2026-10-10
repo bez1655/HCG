@@ -14,7 +14,8 @@ const PlayerToken = React.memo(({ player, pIdx, isActionCell }: PlayerTokenProps
   // а векторные к тому же принимают цвет игрока. Старые записи в базе
   // указывают на .png — переписываем расширение на лету, чтобы не требовать
   // миграции состояния.
-  const chipSrc = (player.chipImage || "/chips/chip_1.svg").replace(/\.png$/i, ".svg");
+  const chipSrc = (player.chipImage || "/chips/chip_1.svg").replace(/\.png$/i, ".svg") +
+    ((player.chipImage || "").includes("?") ? "" : "?v=hw1");
   const neonColor = player.color || "#00ffaa";
 
   // Игрок вне сети остаётся на доске: его положение — часть партии. Но фишка

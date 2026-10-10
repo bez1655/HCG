@@ -17,9 +17,8 @@ let musicVolume = Math.max(
 let isMusicEnabled = localStorage.getItem("hapstore_music_enabled") === "true";
 let isSoundEnabled = localStorage.getItem("hapstore_sound_enabled") !== "false"; // Default true
 
-let synthInterval: any = null;
-let currentSynthStep = 0;
-let masterMusicGain: GainNode | null = null;
+let themeAudio: HTMLAudioElement | null = null;
+const THEME_SRC = "/music/theme.mp4?v=1";
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
@@ -73,7 +72,7 @@ function unlockAudioContext() {
     ctx
       .resume()
       .then(() => {
-        if (isMusicEnabled && !synthInterval) {
+        if (isMusicEnabled) {
           startMusic();
         }
       })
@@ -123,13 +122,7 @@ export function getMusicVolume(): number {
 export function setMusicVolume(vol: number) {
   musicVolume = Math.max(0, Math.min(1, safeNum(vol, 0.4)));
   localStorage.setItem("hapstore_music_volume", musicVolume.toString());
-  if (masterMusicGain && audioCtx) {
-    try {
-      safeSetValue(masterMusicGain.gain, musicVolume, audioCtx.currentTime);
-    } catch {
-      // Volume changes are best-effort while the context is suspended.
-    }
-  }
+  if (themeAudio) themeAudio.volume = musicVolume;
 }
 
 export function getMusicEnabled(): boolean {
@@ -146,151 +139,52 @@ export function setMusicEnabled(enabled: boolean) {
   }
 }
 
-// Procedural Synthwave Bass & Beat Loop Generator
-function playMusicStep() {
-  try {
-    const ctx = getAudioContext();
-    if (!ctx || ctx.state === "suspended") return;
-    const now = safeNum(ctx.currentTime, 0);
-
-    const safeVol = Math.max(0, Math.min(1, safeNum(musicVolume, 0.4)));
-
-    if (!masterMusicGain) {
-      masterMusicGain = ctx.createGain();
-      safeSetValue(masterMusicGain.gain, safeVol, now);
-      masterMusicGain.connect(ctx.destination);
-    } else {
-      safeSetValue(masterMusicGain.gain, safeVol, now);
-    }
-
-    const step = currentSynthStep % 16;
-
-    // Synth-wave Bass Pattern (A minor progression: A, F, C, G)
-    let rootFreq = 55.0; // A1
-    if (currentSynthStep >= 32 && currentSynthStep < 48) {
-      rootFreq = 43.65; // F1
-    } else if (currentSynthStep >= 48 && currentSynthStep < 64) {
-      rootFreq = 65.41; // C2
-    } else if (currentSynthStep >= 64 && currentSynthStep < 80) {
-      rootFreq = 49.0; // G1
-    }
-
-    // Bass synth note on eighth notes (steps)
-    if (step % 2 === 0) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sawtooth";
-
-      // Octave jump for retro arcade feel
-      const octaveMultiplier = step % 4 === 0 ? 1 : 2;
-      safeSetValue(osc.frequency, rootFreq * octaveMultiplier, now);
-
-      // Decay envelope
-      safeSetValue(gain.gain, 0.25, now);
-      safeExpRamp(gain.gain, 0.001, now + 0.12);
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      safeSetValue(filter.frequency, 400, now);
-      safeExpRamp(filter.frequency, 120, now + 0.12);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(masterMusicGain);
-      osc.start(now);
-      osc.stop(now + 0.15);
-    }
-
-    // Minimal drum hit (hi-hat simulation on odd steps, snare on 4, 12)
-    if (step === 4 || step === 12) {
-      // Procedural Snare
-      const noiseBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.1), ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < noiseBuffer.length; i++) {
-        output[i] = Math.random() * 2 - 1;
-      }
-      const noise = ctx.createBufferSource();
-      noise.buffer = noiseBuffer;
-
-      const noiseFilter = ctx.createBiquadFilter();
-      noiseFilter.type = "bandpass";
-      noiseFilter.frequency.value = 1000;
-
-      const noiseGain = ctx.createGain();
-      safeSetValue(noiseGain.gain, 0.15, now);
-      safeExpRamp(noiseGain.gain, 0.001, now + 0.08);
-
-      noise.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(masterMusicGain);
-      noise.start(now);
-      noise.stop(now + 0.1);
-    } else if (step % 4 === 2) {
-      // Procedural Cyber Hi-Hat
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      safeSetValue(osc.frequency, 8000, now);
-      safeSetValue(gain.gain, 0.08, now);
-      safeExpRamp(gain.gain, 0.001, now + 0.03);
-
-      osc.connect(gain);
-      gain.connect(masterMusicGain);
-      osc.start(now);
-      osc.stop(now + 0.04);
-    }
-
-    // Lead retro arpeggio overlay on specific step ranges
-    const leadPattern = [0, 4, 7, 12, 7, 4];
-    if (currentSynthStep % 32 >= 16 && step % 3 === 0) {
-      const notes = [110, 130.81, 164.81, 220, 261.63, 329.63]; // Amin arpeggio freqs
-      const noteFreq = notes[leadPattern[step % 6]] || 220;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      safeSetValue(osc.frequency, noteFreq * 2, now);
-
-      safeSetValue(gain.gain, 0.18, now);
-      safeExpRamp(gain.gain, 0.001, now + 0.2);
-
-      const delay = ctx.createDelay();
-      delay.delayTime.value = 0.1;
-      const feedback = ctx.createGain();
-      feedback.gain.value = 0.3;
-
-      osc.connect(gain);
-      gain.connect(masterMusicGain);
-
-      // Delay effect for ambient retro look
-      gain.connect(delay);
-      delay.connect(feedback);
-      feedback.connect(delay);
-      delay.connect(masterMusicGain);
-
-      osc.start(now);
-      osc.stop(now + 0.25);
-    }
-
-    currentSynthStep = (currentSynthStep + 1) % 96;
-  } catch (e) {
-    console.warn("Synth loop error:", e);
-  }
-}
-
 export function startMusic() {
-  if (synthInterval) clearInterval(synthInterval);
-  const ctx = getAudioContext();
-  if (ctx.state === "suspended") {
-    ctx.resume().catch(() => {});
+  if (!isMusicEnabled || !isSoundEnabled) return;
+  if (!themeAudio) {
+    themeAudio = new Audio(THEME_SRC);
+    themeAudio.loop = true;
   }
-  synthInterval = setInterval(playMusicStep, 150); // 120 BPM sixteenth steps (150ms)
+  themeAudio.volume = musicVolume;
+  const play = () => themeAudio && themeAudio.play().catch(() => {});
+  play();
 }
 
 export function stopMusic() {
-  if (synthInterval) {
-    clearInterval(synthInterval);
-    synthInterval = null;
+  if (themeAudio) {
+    themeAudio.pause();
   }
+}
+
+/** Play the soundtrack baked into a background video (login / rules). */
+export function bindVideoSoundtrack(el: HTMLVideoElement | null): () => void {
+  if (!el) return () => {};
+  stopMusic();
+  el.loop = true;
+  el.playsInline = true;
+  el.volume = musicVolume;
+  const tryLoud = () => {
+    el.muted = false;
+    return el.play().catch(() => {
+      el.muted = true;
+      return el.play().catch(() => {});
+    });
+  };
+  void tryLoud();
+  const unlock = () => {
+    el.muted = false;
+    el.volume = musicVolume;
+    void el.play().catch(() => {});
+  };
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("touchstart", unlock, { passive: true });
+  window.addEventListener("keydown", unlock);
+  return () => {
+    window.removeEventListener("pointerdown", unlock);
+    window.removeEventListener("touchstart", unlock);
+    window.removeEventListener("keydown", unlock);
+    el.pause();
+  };
 }
 
 // Auto-initialize background loop on user actions

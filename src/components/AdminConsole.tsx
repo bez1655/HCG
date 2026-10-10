@@ -100,7 +100,7 @@ function TurnCountPicker({ value, onChange }: { value: number; onChange: (n: num
 const ADMIN_COLORS = ["#FF0055", "#FF5500", "#FFFF00", "#39FF14", "#00FFFF", "#FF00FF", "#ffffff"];
 // Фишки хранятся как SVG: PNG-версии были повреждены, а вектор ещё и
 // принимает цвет игрока.
-const CHIP_MODELS = Array.from({ length: 13 }, (_, i) => `/chips/chip_${i + 1}.svg`);
+const CHIP_MODELS = Array.from({ length: 13 }, (_, i) => `/chips/chip_${i + 1}.svg?v=hw1`);
 
 export default function AdminConsole({
   gameState,

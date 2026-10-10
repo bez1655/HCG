@@ -11,7 +11,7 @@ import * as firestore from "./src/persistence/firestore";
 import { atomicWrite, ensureDir } from "./src/persistence/files";
 import { choosePersistedState } from "./src/persistence/chooseState";
 import { resolveMove, isMilestone } from "./src/game/rules";
-import { pickAlias, publicName } from "./src/game/aliases";
+import { pickAlias, publicName, isHorrorAlias, takenHorrorNames } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
 import {
   applyTelegramHandle,
@@ -41,6 +41,14 @@ import {
   movesFromLogs,
   type PlayerMove,
 } from "./src/game/playerHistory";
+import {
+  entriesFromLogs,
+  pairAsks,
+  formatTurnJournalHtml,
+  formatTurnJournalText,
+  type TurnAskRow,
+  type TurnJournalEntry,
+} from "./src/game/turnJournal";
 import defaultCellsData from "./src/game/data/cells.json" with { type: "json" };
 import {
   ADMIN_PLAYER_ID,
@@ -290,10 +298,58 @@ function maskPlayer(p: Player): Player {
   delete masked.telegramId;
   delete masked.telegramUsername;
   delete masked.previousHandles;
+  delete masked.previousAlias;
+  delete masked.pendingHorrorAlias;
   delete masked.prizeLog;
   delete masked.lastTurnReminderAt;
   return masked;
 }
+
+
+function reserveHorrorAliases(): void {
+  let added = 0;
+  for (const p of gameState.players) {
+    if (p.role !== "player") continue;
+    if (isHorrorAlias(p.alias)) {
+      if (p.pendingHorrorAlias) delete p.pendingHorrorAlias;
+      continue;
+    }
+    if (p.pendingHorrorAlias && isHorrorAlias(p.pendingHorrorAlias)) continue;
+    p.pendingHorrorAlias = pickAlias(takenHorrorNames(gameState.players));
+    added += 1;
+  }
+  if (added) {
+    log.info("Reserved horror aliases", { added });
+    saveState();
+  }
+}
+
+function applyPendingHorrorAlias(player: Player): { from: string; to: string } | null {
+  const next = player.pendingHorrorAlias?.trim();
+  if (!next) return null;
+  const from = player.alias || publicName(player);
+  player.previousAlias = player.alias;
+  player.alias = next;
+  delete player.pendingHorrorAlias;
+  void sendTelegramMessage(
+    player.telegramId || player.name,
+    `🎃 <b>Хеллоуин в Hapstore</b>
+
+Ваш игровой псевдоним сменился.
+Было: <b>${escapeHtml(from)}</b>
+Стало: <b>${escapeHtml(next)}</b>
+
+На доске вас теперь видят как «${escapeHtml(next)}».`
+  );
+  void sendTelegramMessageToAdmin(
+    `🎃 Смена псевдонима
+${escapeHtml(from)} → <b>${escapeHtml(next)}</b>
+${escapeHtml(player.name)}`
+  );
+  log.info("Horror alias applied", { player: player.id, from, to: next });
+  return { from, to: next };
+}
+
 
 function pushPrize(player: Player, bonus: NonNullable<Player["activeBonus"]>): void {
   if (!player.prizeLog) player.prizeLog = [];
@@ -351,6 +407,93 @@ const CALIBRATION_FILE = path.join(DATA_DIR, "game-calibration-persistent.json")
 const MAX_LOGS_IN_STATE = 300;
 const LOG_ARCHIVE_FILE = path.join(DATA_DIR, "game-logs-archive.jsonl");
 const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
+const TURN_JOURNAL_FILE = path.join(DATA_DIR, "turn-requests.jsonl");
+
+
+function loadTurnEntries(): TurnJournalEntry[] {
+  if (!fs.existsSync(TURN_JOURNAL_FILE)) return [];
+  const out: TurnJournalEntry[] = [];
+  for (const line of fs.readFileSync(TURN_JOURNAL_FILE, "utf-8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      out.push(JSON.parse(line) as TurnJournalEntry);
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+function appendTurnEntry(entry: TurnJournalEntry): void {
+  fs.appendFile(TURN_JOURNAL_FILE, JSON.stringify(entry) + "\n", "utf-8", (err) => {
+    if (err) log.error("Could not append turn journal", errorContext(err));
+  });
+}
+
+function recordTurnRequest(player: Player, requested: number): void {
+  appendTurnEntry({
+    at: Date.now(),
+    timeLabel: new Date().toLocaleString("ru-RU"),
+    kind: "request",
+    playerId: player.id,
+    name: player.name,
+    alias: player.alias ?? null,
+    requested,
+    granted: null,
+    note: "request",
+  });
+}
+
+function recordTurnGrant(player: Player, granted: number): void {
+  appendTurnEntry({
+    at: Date.now(),
+    timeLabel: new Date().toLocaleString("ru-RU"),
+    kind: "grant",
+    playerId: player.id,
+    name: player.name,
+    alias: player.alias ?? null,
+    requested: null,
+    granted,
+    note: "grant",
+  });
+}
+
+function recordTurnReject(player: Player): void {
+  appendTurnEntry({
+    at: Date.now(),
+    timeLabel: new Date().toLocaleString("ru-RU"),
+    kind: "reject",
+    playerId: player.id,
+    name: player.name,
+    alias: player.alias ?? null,
+    requested: null,
+    granted: 0,
+    note: "reject",
+  });
+}
+
+function hydrateTurnJournal(): void {
+  const fromFile = loadTurnEntries();
+  const fromLogs = entriesFromLogs(
+    [...loadArchivedLogs(), ...(gameState.logs || [])],
+    gameState.players
+  );
+  if (fromLogs.length === 0) return;
+  const have = new Set(fromFile.map((e) => JSON.stringify([e.kind, e.playerId, e.name, e.requested, e.granted, e.timeLabel])));
+  const extra = fromLogs.filter(
+    (e) => !have.has(JSON.stringify([e.kind, e.playerId, e.name, e.requested, e.granted, e.timeLabel]))
+  );
+  if (extra.length === 0) return;
+  const lines = extra.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  try {
+    fs.appendFileSync(TURN_JOURNAL_FILE, lines, "utf-8");
+    log.info("Turn journal restored from logs", { added: extra.length });
+  } catch (err) {
+    log.error("Could not hydrate turn journal", errorContext(err));
+  }
+}
+
+
 
 /**
  * Build marker for the game server.
@@ -358,7 +501,7 @@ const MOVES_FILE = path.join(DATA_DIR, "player-moves.jsonl");
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-10-07.1";
+const SERVER_BUILD = "2026-10-10.3";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -967,6 +1110,7 @@ function approveTurn(
     timestamp: new Date().toLocaleTimeString(),
     type: "admin",
   });
+  recordTurnGrant(player, turns);
 
   if (player.telegramId || player.name) {
     void sendTelegramMessage(
@@ -1035,6 +1179,7 @@ function rejectTurn(playerId: string, rejectedBy?: string): ApproveTurnResult {
     type: "admin",
   });
 
+  recordTurnReject(player);
   saveState();
   broadcastState();
   return { ok: true, player };
@@ -1377,6 +1522,9 @@ async function start() {
   } catch (err) {
     log.error("Storage: Failed to write the reconciled state file:", errorContext(err));
   }
+
+  hydrateTurnJournal();
+  reserveHorrorAliases();
 
   // Load auth passwords from Firestore first, fallback to local file
   let loadedAuthFromFirestore = false;
@@ -2172,6 +2320,7 @@ async function start() {
       // Отметка присутствия: по ней фишка остаётся на доске.
       player.lastSeenAt = Date.now();
       if (handle) applyTelegramHandle(gameState.players, player, handle);
+      applyPendingHorrorAlias(player);
       if (!player.chipImage) player.chipImage = getRandomChipImage(takenChips());
       if (parsed.data.color) player.color = parsed.data.color;
 
@@ -2374,6 +2523,24 @@ async function start() {
     });
   });
 
+
+  app.get("/api/admin/turn-journal", requireInternalAuth, (req, res) => {
+    const raw = typeof req.query.target === "string" ? req.query.target.trim() : "";
+    let rows = pairAsks(loadTurnEntries());
+    if (raw) {
+      const player = findPlayerByTarget(gameState.players, raw);
+      if (!player) return res.status(404).json({ error: `Игрок «${raw}» не найден.` });
+      rows = rows.filter((r) => r.playerId === player.id);
+    }
+    return res.json({
+      success: true,
+      total: rows.length,
+      text: formatTurnJournalText(rows),
+      html: formatTurnJournalHtml(rows),
+      rows,
+    });
+  });
+
   app.get("/api/admin/logs-history", requireInternalAuth, (req, res) => {
     res.json({ success: true, logs: gameState.logs || [] });
   });
@@ -2526,6 +2693,7 @@ async function start() {
         }
         existingPlayer.isOnline = true;
         existingPlayer.lastSeenAt = Date.now();
+        applyPendingHorrorAlias(existingPlayer);
         if (!existingPlayer.chipImage) {
           existingPlayer.chipImage = getRandomChipImage(takenChips());
         }
@@ -2608,6 +2776,9 @@ async function start() {
       const connected = gameState.players.find((pl) => pl.id === authPlayerId);
       if (connected) {
         connected.lastSeenAt = Date.now();
+        if (applyPendingHorrorAlias(connected)) {
+          saveState();
+        }
         broadcastSlices("players");
       }
     }
@@ -3705,10 +3876,11 @@ async function start() {
 
       addLog({
         id: "req_" + Date.now(),
-        message: `⏳ Игрок ${shownName(player)} запросил ход. Ожидание одобрения.${bonusAlert}`,
+        message: `⏳ Игрок ${shownName(player)} запросил ${requested} ${pluralizeTurns(requested)}. Ожидание одобрения.${bonusAlert}`,
         timestamp: new Date().toLocaleTimeString(),
         type: "system",
       });
+      recordTurnRequest(player, requested);
 
       /*
        * Здесь была рассылка «ЗАПРОС НА ХОД» в общую группу.

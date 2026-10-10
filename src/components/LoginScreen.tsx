@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { playSound } from "../utils/sounds";
+import { playSound, bindVideoSoundtrack } from "../utils/sounds";
 import { apiFetch, IS_STANDALONE_BUILD } from "../config/api";
 
 interface LoginScreenProps {
@@ -34,6 +34,7 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
   const [errorMsg, setErrorMsg] = useState(notice || "");
   const [loading, setLoading] = useState(false);
   const [handleLocked, setHandleLocked] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
 
   // A notice arriving after mount (the Telegram handshake resolves
   // asynchronously) must still reach the user.
@@ -49,6 +50,8 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
       backgroundUrl.startsWith("data:video"));
   const bg = customIsVideo ? backgroundUrl! : "/Log.mp4?v=9";
   const isVideo = true;
+
+  React.useEffect(() => bindVideoSoundtrack(videoRef.current), [bg]);
 
   React.useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
@@ -123,10 +126,10 @@ export default function LoginScreen({ backgroundUrl, notice, onLogin }: LoginScr
         {/* Background Video/Image */}
         {isVideo ? (
           <video
+            ref={videoRef}
             src={bg}
             autoPlay
             loop
-            muted
             playsInline
             poster="/Log.png?v=9"
             className="absolute inset-0 w-full h-full object-cover z-0"

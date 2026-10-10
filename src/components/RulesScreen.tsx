@@ -15,6 +15,9 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
       backgroundUrl.startsWith("data:video"));
   const bg = customIsVideo ? backgroundUrl! : "/RulesHAP.mp4?v=9";
   const isVideo = true;
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  React.useEffect(() => bindVideoSoundtrack(videoRef.current), [bg]);
 
   const handleProceed = () => {
     const tg = (window as any).Telegram?.WebApp;
@@ -45,10 +48,10 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
       <div className="relative w-full h-full max-w-[500px] bg-[#0B1426] overflow-hidden">
         {isVideo ? (
           <video
+            ref={videoRef}
             src={bg}
             autoPlay
             loop
-            muted
             playsInline
             poster="/RulesHAP.png?v=9"
             className="absolute inset-0 w-full h-full object-cover z-0"
