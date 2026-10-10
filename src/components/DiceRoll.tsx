@@ -46,21 +46,23 @@ const HOLD_MS = 1600;
  * single time, not on every render. Nothing here depends on the rolled
  * value — the final angle arrives through the --face custom property.
  */
-const STYLE_ID = "hcg-dice-roll-styles";
+const STYLE_ID = "hcg-dice-roll-styles-hw";
 const CSS = `
 @keyframes hcg-dice-spin {
-  0%   { transform: rotate(0deg)   scale(0.55); }
-  55%  { transform: rotate(620deg) scale(1.12); }
-  100% { transform: rotate(1080deg) scale(1); }
+  0%   { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(0.5); }
+  28%  { transform: rotateX(280deg) rotateY(160deg) rotateZ(90deg) scale(1.08); }
+  55%  { transform: rotateX(520deg) rotateY(400deg) rotateZ(200deg) scale(1.16); }
+  78%  { transform: rotateX(780deg) rotateY(620deg) rotateZ(310deg) scale(1.04); }
+  100% { transform: rotateX(1080deg) rotateY(720deg) rotateZ(360deg) scale(1); }
 }
 @keyframes hcg-dice-land {
-  0%   { transform: scale(1.18); }
-  60%  { transform: scale(0.94); }
-  100% { transform: scale(1); }
+  0%   { transform: rotateX(-12deg) scale(1.22); }
+  55%  { transform: rotateX(8deg) scale(0.92); }
+  100% { transform: rotateX(0deg) scale(1); }
 }
 @keyframes hcg-dice-ring {
-  0%   { opacity: .85; transform: scale(.5); }
-  100% { opacity: 0;   transform: scale(2.1); }
+  0%   { opacity: .9; transform: scale(.45); }
+  100% { opacity: 0;   transform: scale(2.15); }
 }
 @keyframes hcg-dice-fade { from { opacity: 0 } to { opacity: 1 } }
 
@@ -68,33 +70,42 @@ const CSS = `
   position: fixed; inset: 0; z-index: 200;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  background: rgba(0,0,0,.42);
+  background: rgba(8,2,0,.55);
   isolation: isolate;
+  perspective: 720px;
   animation: hcg-dice-fade .18s ease-out both;
-  /* The board keeps painting underneath; no backdrop-filter, which is what
-     made the compositor give up last time. */
 }
-.hcg-dice-stage { position: relative; width: 208px; height: 208px; }
+.hcg-dice-stage {
+  position: relative; width: 228px; height: 228px;
+  transform-style: preserve-3d;
+}
 .hcg-dice-img {
   width: 100%; height: 100%; object-fit: contain;
   will-change: transform;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 18px 22px rgba(0,0,0,.65));
 }
-.hcg-dice-img.is-spinning { animation: hcg-dice-spin ${SPIN_MS}ms cubic-bezier(.25,.9,.3,1) both; }
-.hcg-dice-img.is-landed   { animation: hcg-dice-land 420ms cubic-bezier(.2,1.4,.4,1) both; }
+.hcg-dice-img.is-spinning { animation: hcg-dice-spin ${SPIN_MS}ms cubic-bezier(.2,.75,.25,1) both; }
+.hcg-dice-img.is-landed   { animation: hcg-dice-land 480ms cubic-bezier(.2,1.35,.35,1) both; }
 .hcg-dice-ring {
-  position: absolute; inset: 12%;
-  border: 2px solid var(--face-color, #00ffaa);
+  position: absolute; inset: 8%;
+  border: 2px solid var(--face-color, #ff7a18);
   border-radius: 50%;
   animation: hcg-dice-ring 900ms ease-out both;
   pointer-events: none;
 }
 .hcg-dice-value {
-  position: absolute; inset: 0;
+  position: absolute; left: 50%; bottom: -8px;
+  transform: translate(-50%, 100%);
+  min-width: 56px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(20,8,0,.78);
+  border: 1px solid rgba(255,140,40,.55);
   display: flex; align-items: center; justify-content: center;
-  font: 900 92px/1 Orbitron, system-ui, sans-serif;
-  color: var(--face-color, #00ffaa);
-  text-shadow: 0 0 18px var(--face-color, #00ffaa), 0 0 46px var(--face-color, #00ffaa);
-  -webkit-text-stroke: 1px rgba(255,255,255,.85);
+  font: 900 28px/1 Orbitron, system-ui, sans-serif;
+  color: var(--face-color, #ffb84d);
+  text-shadow: 0 0 12px #ff7a18;
   pointer-events: none;
 }
 .hcg-dice-caption {
@@ -120,12 +131,12 @@ function ensureStyles(): void {
 
 /** Colour per face. Cosmetic only. */
 const FACE_COLOURS: Record<number, string> = {
-  1: "#00ffaa",
-  2: "#4da3ff",
-  3: "#c77dff",
-  4: "#ffb84d",
-  5: "#ff6b9d",
-  6: "#ffffff",
+  1: "#ffb84d",
+  2: "#ff7a18",
+  3: "#e07012",
+  4: "#ffd36a",
+  5: "#c45c0c",
+  6: "#fff3d0",
 };
 
 export default function DiceRoll({ result, onDone }: DiceRollProps) {
@@ -199,7 +210,7 @@ export default function DiceRoll({ result, onDone }: DiceRollProps) {
       <div className="hcg-dice-stage">
         {landed && <div className="hcg-dice-ring" />}
         <img
-          src="/Dice.png?v=6"
+          src="/Dice.png?v=11"
           alt=""
           draggable={false}
           className={`hcg-dice-img ${landed ? "is-landed" : "is-spinning"}`}

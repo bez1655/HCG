@@ -13,7 +13,7 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
     (pathOf(backgroundUrl).endsWith(".mp4") ||
       pathOf(backgroundUrl).endsWith(".mov") ||
       backgroundUrl.startsWith("data:video"));
-  const bg = customIsVideo ? backgroundUrl! : "/RulesHAP.mp4?v=9";
+  const bg = customIsVideo ? backgroundUrl! : "/RulesHAP.mp4?v=10";
   const isVideo = true;
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
 
@@ -53,7 +53,7 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
             autoPlay
             loop
             playsInline
-            poster="/RulesHAP.png?v=9"
+            poster="/RulesHAP.png?v=10"
             className="absolute inset-0 w-full h-full object-cover z-0"
           ></video>
         ) : (

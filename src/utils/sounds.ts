@@ -18,7 +18,7 @@ let isMusicEnabled = localStorage.getItem("hapstore_music_enabled") === "true";
 let isSoundEnabled = localStorage.getItem("hapstore_sound_enabled") !== "false"; // Default true
 
 let themeAudio: HTMLAudioElement | null = null;
-const THEME_SRC = "/music/theme.mp4?v=1";
+const THEME_SRC = "/music/sound.mp3?v=1";
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
@@ -163,13 +163,8 @@ export function bindVideoSoundtrack(el: HTMLVideoElement | null): () => void {
   el.loop = true;
   el.playsInline = true;
   el.volume = musicVolume;
-  const tryLoud = () => {
-    el.muted = false;
-    return el.play().catch(() => {
-      el.muted = true;
-      return el.play().catch(() => {});
-    });
-  };
+  el.muted = false;
+  const tryLoud = () => el.play().catch(() => {});
   void tryLoud();
   const unlock = () => {
     el.muted = false;

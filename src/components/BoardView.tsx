@@ -463,12 +463,12 @@ export default function BoardView({
       {/* Immersive Full-Screen Video/Image Background */}
       <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <video
-          src="/BoardHAP.mp4?v=9"
+          src="/BoardHAP.mp4?v=10"
           autoPlay
           loop
           muted
           playsInline
-          poster="/BoardHAP.png?v=9"
+          poster="/BoardHAP.png?v=10"
           className="w-full h-full object-cover opacity-40 brightness-100 blur-[2px]"
           onError={(_e) => {
             console.error("App background video load error");
@@ -1069,12 +1069,12 @@ export default function BoardView({
           {/* Background Map video */}
           <video
             ref={boardVideoRef}
-            src="/BoardHAP.mp4?v=9"
+            src="/BoardHAP.mp4?v=10"
             autoPlay
             loop
             muted
             playsInline
-            poster="/BoardHAP.png?v=9"
+            poster="/BoardHAP.png?v=10"
             className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
           />
 
@@ -1297,7 +1297,7 @@ export default function BoardView({
             >
               {/* Neon Aura Glow when active */}
               {isMyTurn && gameState.turnStatus === "waiting_roll" && (
-                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#00ffaa] via-pink-500 to-[#00f0ff] opacity-70 blur-md animate-pulse scale-110 pointer-events-none" />
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#ff7a18] via-[#c45c0c] to-[#ffd36a] opacity-70 blur-md animate-pulse scale-110 pointer-events-none" />
               )}
 
               {/* Dice Graphic Box */}
@@ -1309,9 +1309,9 @@ export default function BoardView({
                 }`}
               >
                 <img
-                  src="/Dice.png?v=6"
+                  src="/Dice.png?v=11"
                   alt="Dice"
-                  className="w-[44px] h-[44px] object-contain filter drop-shadow-[0_0_8px_rgba(255,0,0,0.6)]"
+                  className="w-[44px] h-[44px] object-contain filter drop-shadow-[0_0_10px_rgba(255,122,24,0.85)]"
                   style={{ width: "44px", height: "44px" }}
                 />
                 <div className="absolute inset-0 rounded-xl bg-transparent" />

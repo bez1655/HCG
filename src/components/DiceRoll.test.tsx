@@ -20,7 +20,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, "DiceRoll.tsx"), "utf-8");
 
 beforeEach(() => {
   vi.useFakeTimers();
-  document.getElementById("hcg-dice-roll-styles")?.remove();
+  document.getElementById("hcg-dice-roll-styles-hw")?.remove();
 });
 
 afterEach(() => {
@@ -102,7 +102,7 @@ describe("the overlay cannot stall the browser", () => {
     cleanup();
     render(<DiceRoll result={6} onDone={() => {}} />);
 
-    expect(document.querySelectorAll("#hcg-dice-roll-styles")).toHaveLength(1);
+    expect(document.querySelectorAll("#hcg-dice-roll-styles-hw")).toHaveLength(1);
   });
 
   it("renders no <style> element of its own", () => {
