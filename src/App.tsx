@@ -489,10 +489,10 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = (text: string, replyToId?: string) => {
     if (socket && userId) {
       // Sender identity is resolved server-side from the session token.
-      socket.emit("chat:send", { text });
+      socket.emit("chat:send", { text, replyToId });
     }
   };
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # Switch bootstrap Telegram admin to @bez_adm1 (old account is gone).
 # Run ON THE VPS, in the live project directory (usually /var/www/hcg).
 set -euo pipefail

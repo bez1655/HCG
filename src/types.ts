@@ -120,6 +120,12 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isAdmin: boolean;
+  /** Snippet of the message this one answers, if any. */
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+  };
 }
 
 export interface GameLog {

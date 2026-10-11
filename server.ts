@@ -501,7 +501,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-10-10.6";
+const SERVER_BUILD = "2026-10-10.7";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -2839,6 +2839,18 @@ async function start() {
       const senderName = isAdmin ? "Администратор" : sender ? shownName(sender) : "Игрок";
       const senderColor = isAdmin ? "#FF00FF" : (sender?.color ?? "#39FF14");
 
+      let replyTo: ChatMessage["replyTo"];
+      if (parsed.data.replyToId) {
+        const quoted = gameState.chatMessages.find((m) => m.id === parsed.data.replyToId);
+        if (quoted) {
+          replyTo = {
+            id: quoted.id,
+            senderName: quoted.senderName,
+            text: quoted.text.slice(0, 80),
+          };
+        }
+      }
+
       const chatMsg: ChatMessage = {
         id: "chat_" + Date.now() + "_" + Math.floor(Math.random() * 100),
         senderId: authPlayerId,
@@ -2847,6 +2859,7 @@ async function start() {
         text,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         isAdmin,
+        replyTo,
       };
 
       gameState.chatMessages.push(chatMsg);
@@ -2857,7 +2870,9 @@ async function start() {
 
       addLog({
         id: "log_chat_" + Date.now(),
-        message: `[ЧАТ] ${senderName}: ${text}`,
+        message: replyTo
+          ? `[ЧАТ] ${senderName} → ${replyTo.senderName}: ${text}`
+          : `[ЧАТ] ${senderName}: ${text}`,
         timestamp: new Date().toLocaleTimeString(),
         type: "chat",
       });

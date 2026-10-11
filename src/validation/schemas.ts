@@ -143,6 +143,7 @@ export const telegramUserSyncSchema = z.object({
 
 export const chatSendSchema = z.object({
   text: z.string().trim().min(1).max(500),
+  replyToId: z.string().trim().min(1).max(64).optional(),
 });
 
 export const updatePlayerSchema = z.object({

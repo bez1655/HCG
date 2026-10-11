@@ -54,7 +54,7 @@ interface BoardViewProps {
   pendingRoll: number | null;
   /** Clears pendingRoll once the animation has been consumed. */
   onRollAnimationDone: () => void;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, replyToId?: string) => void;
   onLogout: () => void;
   openAdminPanel: () => void;
   onCalibrateCell: (cal: { cellId: number; x: number; y: number }) => void;
@@ -89,6 +89,9 @@ export default function BoardView({
 }: BoardViewProps) {
   const [activeChatTab, setActiveChatTab] = useState<"chat" | "logs">("chat");
   const [chatInput, setChatInput] = useState("");
+  const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; text: string } | null>(
+    null
+  );
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   // Фоновое видео доски. Останавливается на время броска: декодирование
@@ -431,8 +434,9 @@ export default function BoardView({
   const sendChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    onSendMessage(chatInput.trim());
+    onSendMessage(chatInput.trim(), replyTo?.id);
     setChatInput("");
+    setReplyTo(null);
     playSound("click");
   };
 
@@ -976,9 +980,18 @@ export default function BoardView({
                 <div className="flex-1 flex flex-col min-h-0">
                   <div className="flex-1 overflow-y-auto space-y-2.5 scrollbar-none pr-1">
                     {(gameState.chatMessages || []).map((msg) => (
-                      <div
+                      <button
+                        type="button"
                         key={msg.id}
-                        className="text-[11px] leading-relaxed break-words font-sans flex flex-col bg-white/5 p-2 rounded-xl"
+                        onClick={() => {
+                          playSound("click");
+                          setReplyTo({
+                            id: msg.id,
+                            senderName: msg.senderName,
+                            text: msg.text.slice(0, 80),
+                          });
+                        }}
+                        className="text-left text-[11px] leading-relaxed break-words font-sans flex flex-col bg-white/5 p-2 rounded-xl cursor-pointer hover:bg-white/10"
                       >
                         <span
                           style={{ color: msg.senderColor }}
@@ -986,20 +999,43 @@ export default function BoardView({
                         >
                           {msg.senderName}
                         </span>
+                        {msg.replyTo && (
+                          <span className="mb-1 rounded-md border-l-2 border-orange-400/70 bg-black/40 px-2 py-1 text-[10px] text-gray-400">
+                            <span className="font-bold text-orange-300/90">{msg.replyTo.senderName}</span>
+                            <span className="block truncate">{msg.replyTo.text}</span>
+                          </span>
+                        )}
                         <span className="text-gray-200">{msg.text}</span>
-                      </div>
+                      </button>
                     ))}
                     <div ref={chatEndRef}></div>
                   </div>
                   <form
                     onSubmit={sendChat}
-                    className="p-2 border-t border-purple-500/20 flex gap-1.5 mt-2"
+                    className="p-2 border-t border-purple-500/20 flex flex-col gap-1.5 mt-2"
                   >
+                    {replyTo && (
+                      <div className="flex items-start gap-1 rounded-md border-l-2 border-orange-400 bg-white/5 px-2 py-1">
+                        <div className="min-w-0 flex-1 text-[10px] text-gray-400">
+                          <span className="font-bold text-orange-300">Ответ {replyTo.senderName}</span>
+                          <span className="block truncate">{replyTo.text}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="shrink-0 text-gray-500 hover:text-white"
+                          onClick={() => setReplyTo(null)}
+                          aria-label="Отменить ответ"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex gap-1.5">
                     <input
                       type="text"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Сообщение..."
+                      placeholder={replyTo ? "Ваш ответ..." : "Сообщение..."}
                       className="flex-1 bg-black border border-white/10 rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-purple-500 font-sans"
                     />
                     <button
@@ -1008,6 +1044,7 @@ export default function BoardView({
                     >
                       <Send size={12} />
                     </button>
+                    </div>
                   </form>
                 </div>
               ) : (
