@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules
+dist
+.git
+.github
+
+# Secrets — must never enter an image layer
+.env
+.env.*
+!.env.example
+firebase-applet-config.json
+*serviceAccount*.json
+*service-account*.json
+*.pem
+*.key
+*credentials*.json
+
+# Runtime state (lives in the mounted volume)
+data
+*-persistent.json
+game-logs-archive.jsonl
+telegram_users.json
+admin_list.json
+
+# Misc
+*.log
+coverage
+*.bak

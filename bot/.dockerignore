@@ -1,0 +1,33 @@
+# Build context for the bot image.
+#
+# Without this file `COPY . .` in bot/Dockerfile copies whatever happens to sit
+# in bot/ on the host — including a node_modules directory left behind by a
+# local `npm install`. That directory would land on top of the one produced by
+# `npm ci` inside the image, replacing freshly resolved dependencies with stale
+# ones built for a different platform. The root context already had a
+# .dockerignore; the bot context did not.
+
+# Dependencies and build output
+node_modules
+dist
+.git
+
+# Secrets — must never enter an image layer
+.env
+.env.*
+!.env.example
+*serviceAccount*.json
+*service-account*.json
+*credentials*.json
+*.pem
+*.key
+
+# Runtime state (lives in the mounted volume, not in the image)
+data
+telegram_users.json
+admin_list.json
+registration-requests.json
+
+# Misc
+*.log
+*.bak

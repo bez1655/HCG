@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="metalc7" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#3d2a1a"/>
+      <stop offset="55%" stop-color="#1a120c"/>
+      <stop offset="100%" stop-color="#070504"/>
+    </radialGradient>
+    <linearGradient id="neonGlowc7" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="var(--chip-glow, #ff7a18)"/>
+      <stop offset="100%" stop-color="var(--chip-glow-2, #ffd36a)"/>
+    </linearGradient>
+    <filter id="glowc7" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+  </defs>
+  <circle cx="256" cy="256" r="220" fill="#120a06" stroke="#2a1810" stroke-width="18"/>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#4a2c14" stroke-width="6" stroke-dasharray="10 14"/>
+  <circle cx="256" cy="256" r="172" fill="url(#metalc7)" stroke="#5a3a20" stroke-width="5"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="url(#neonGlowc7)" stroke-width="12" filter="url(#glowc7)"/>
+  <circle cx="256" cy="256" r="128" fill="#140c08"/>
+  <!-- moon -->
+<circle cx="256" cy="256" r="70" fill="#e8d48a"/>
+<circle cx="286" cy="236" r="54" fill="#140c08"/>
+<circle cx="230" cy="248" r="8" fill="#d4c070" opacity="0.5"/>
+<circle cx="248" cy="288" r="5" fill="#d4c070" opacity="0.4"/>
+</svg>

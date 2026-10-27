@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="metalc10" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#3d2a1a"/>
+      <stop offset="55%" stop-color="#1a120c"/>
+      <stop offset="100%" stop-color="#070504"/>
+    </radialGradient>
+    <linearGradient id="neonGlowc10" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="var(--chip-glow, #ff7a18)"/>
+      <stop offset="100%" stop-color="var(--chip-glow-2, #ffd36a)"/>
+    </linearGradient>
+    <filter id="glowc10" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+  </defs>
+  <circle cx="256" cy="256" r="220" fill="#120a06" stroke="#2a1810" stroke-width="18"/>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#4a2c14" stroke-width="6" stroke-dasharray="10 14"/>
+  <circle cx="256" cy="256" r="172" fill="url(#metalc10)" stroke="#5a3a20" stroke-width="5"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="url(#neonGlowc10)" stroke-width="12" filter="url(#glowc10)"/>
+  <circle cx="256" cy="256" r="128" fill="#140c08"/>
+  <!-- spider -->
+<circle cx="256" cy="256" r="28" fill="#1a1210"/>
+<circle cx="256" cy="232" r="18" fill="#1a1210"/>
+<circle cx="248" cy="228" r="4" fill="#ffd36a"/>
+<circle cx="264" cy="228" r="4" fill="#ffd36a"/>
+<g fill="none" stroke="#1a1210" stroke-width="8" stroke-linecap="round">
+  <path d="M232 248 C190 230 170 210 150 200"/>
+  <path d="M232 258 C186 258 160 270 140 286"/>
+  <path d="M236 270 C200 300 190 330 180 350"/>
+  <path d="M280 248 C322 230 342 210 362 200"/>
+  <path d="M280 258 C326 258 352 270 372 286"/>
+  <path d="M276 270 C312 300 322 330 332 350"/>
+</g>
+</svg>

@@ -4,6 +4,3 @@ dist/
 build/
 *.log
 .DS_Store
-hcg/
-acg/
-dcg/

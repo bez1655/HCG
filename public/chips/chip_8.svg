@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="metalc8" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#3d2a1a"/>
+      <stop offset="55%" stop-color="#1a120c"/>
+      <stop offset="100%" stop-color="#070504"/>
+    </radialGradient>
+    <linearGradient id="neonGlowc8" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="var(--chip-glow, #ff7a18)"/>
+      <stop offset="100%" stop-color="var(--chip-glow-2, #ffd36a)"/>
+    </linearGradient>
+    <filter id="glowc8" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+  </defs>
+  <circle cx="256" cy="256" r="220" fill="#120a06" stroke="#2a1810" stroke-width="18"/>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#4a2c14" stroke-width="6" stroke-dasharray="10 14"/>
+  <circle cx="256" cy="256" r="172" fill="url(#metalc8)" stroke="#5a3a20" stroke-width="5"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="url(#neonGlowc8)" stroke-width="12" filter="url(#glowc8)"/>
+  <circle cx="256" cy="256" r="128" fill="#140c08"/>
+  <!-- raven -->
+<path d="M300 220c-20-8-50-4-70 16-8-22-28-36-54-32 16 10 22 28 18 40-28 8-48 34-44 64 22-16 48-16 66-8-6 18 2 36 18 48 6-16 8-32 4-46 24 4 52-8 70-28-8 22 2 44 22 56-4-28-8-54-30-110z" fill="#1a1210"/>
+<polygon points="176,244 148,236 176,256" fill="#ff7a18"/>
+<circle cx="200" cy="248" r="5" fill="#ffd36a"/>
+</svg>

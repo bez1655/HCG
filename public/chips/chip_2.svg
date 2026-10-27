@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="metalc2" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#3d2a1a"/>
+      <stop offset="55%" stop-color="#1a120c"/>
+      <stop offset="100%" stop-color="#070504"/>
+    </radialGradient>
+    <linearGradient id="neonGlowc2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="var(--chip-glow, #ff7a18)"/>
+      <stop offset="100%" stop-color="var(--chip-glow-2, #ffd36a)"/>
+    </linearGradient>
+    <filter id="glowc2" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+  </defs>
+  <circle cx="256" cy="256" r="220" fill="#120a06" stroke="#2a1810" stroke-width="18"/>
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#4a2c14" stroke-width="6" stroke-dasharray="10 14"/>
+  <circle cx="256" cy="256" r="172" fill="url(#metalc2)" stroke="#5a3a20" stroke-width="5"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="url(#neonGlowc2)" stroke-width="12" filter="url(#glowc2)"/>
+  <circle cx="256" cy="256" r="128" fill="#140c08"/>
+  <!-- ghost -->
+<path d="M256 196c-48 0-72 40-72 88 0 20 8 40 8 40l16-14 16 18 16-16 16 16 16-18 16 14s8-20 8-40c0-48-24-88-72-88z" fill="#f4efe6"/>
+<circle cx="236" cy="248" r="10" fill="#1a0c04"/>
+<circle cx="276" cy="248" r="10" fill="#1a0c04"/>
+<ellipse cx="256" cy="276" rx="14" ry="8" fill="#c45c38"/>
+</svg>
