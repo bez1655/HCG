@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
-import { GameState, DropBoxOption } from "./types";
+import { GameState } from "./types";
 import { playSound } from "./utils/sounds";
 import { setLocale, detectLocale } from "./i18n";
 import { apiFetch, socketUrl, TELEGRAM_LOGIN_ENABLED } from "./config/api";
@@ -9,7 +9,6 @@ import RulesScreen from "./components/RulesScreen";
 import BoardView from "./components/BoardView";
 import AdminConsole from "./components/AdminConsole";
 import PopupCard from "./components/PopupCard";
-import DropBoxModal from "./components/DropBoxModal";
 import TurnOutcomeCard, { TurnOutcome } from "./components/TurnOutcomeCard";
 import ToastManager from "./components/ToastManager";
 import CrashGuard from "./components/CrashGuard";
@@ -74,14 +73,6 @@ export default function App() {
    * вопрос «что мне выпало», который возникает у игрока всегда.
    */
   const [turnOutcome, setTurnOutcome] = useState<TurnOutcome | null>(null);
-  const [dropBoxSession, setDropBoxSession] = useState<{
-    cellId: number;
-    options: DropBoxOption[];
-  } | null>(null);
-  const [dropBoxResult, setDropBoxResult] = useState<{
-    chosen: DropBoxOption;
-    allOptions: DropBoxOption[];
-  } | null>(null);
   // Dice value decided by the server for this client (drives the 3D animation).
   const [pendingRoll, setPendingRoll] = useState<number | null>(null);
   // Последняя ошибка от сервера. Показывается плашкой поверх игры вместо
@@ -370,17 +361,6 @@ export default function App() {
       }, 1400);
     });
 
-    newSocket.on("dropbox:available", (data: { cellId: number; options: DropBoxOption[] }) => {
-      window.setTimeout(() => {
-        setDropBoxSession(data);
-        setDropBoxResult(null);
-      }, 1600);
-    });
-
-    newSocket.on("dropbox:result", (data: { chosen: DropBoxOption; allOptions: DropBoxOption[] }) => {
-      setDropBoxResult(data);
-    });
-
     // Last-resort deadline. Do NOT wipe the session: Telegram Mini App would
     // bounce back to the login form after a slow WebView, which looks like a
     // crash. Pull a public snapshot over HTTP instead.
@@ -503,15 +483,9 @@ export default function App() {
     screen === "admin" && userRole !== "admin" ? "board" : screen;
 
   // The server picks the dice value and replies with "roll:result".
-  const handleRoll = (item?: "shield" | "loaded_dice" | "magnet") => {
+  const handleRoll = () => {
     if (socket && userId) {
-      socket.emit("roll:request", { useItem: item });
-    }
-  };
-
-  const handlePickDropBox = (boxIndex: number) => {
-    if (socket && userId) {
-      socket.emit("dropbox:pick", { boxIndex });
+      socket.emit("roll:request");
     }
   };
 
@@ -628,18 +602,6 @@ export default function App() {
     }
   };
 
-  const handleGrantItem = (pId: string, item: "shield" | "loaded_dice" | "magnet") => {
-    if (socket && userRole === "admin") {
-      socket.emit("admin:grant_item", pId, item);
-    }
-  };
-
-  const handleUpdateSkin = (chipImage: string, color: string) => {
-    if (socket) {
-      socket.emit("player:update_skin", { chipImage, color });
-    }
-  };
-
   const handleRejectPlayerTurn = (pId: string) => {
     if (socket && userRole === "admin") {
       socket.emit("admin:reject_player_turn", pId);
@@ -714,19 +676,6 @@ export default function App() {
       {/* Результат хода — поверх всего, после каждого броска */}
       <TurnOutcomeCard outcome={turnOutcome} onClose={() => setTurnOutcome(null)} />
 
-      {/* Интерактивный Кибер-дроп — выбор из 3 кейсов */}
-      {dropBoxSession && (
-        <DropBoxModal
-          cellId={dropBoxSession.cellId}
-          result={dropBoxResult}
-          onPick={handlePickDropBox}
-          onClose={() => {
-            setDropBoxSession(null);
-            setDropBoxResult(null);
-          }}
-        />
-      )}
-
       {visibleScreen === "login" && (
         <LoginScreen
           backgroundUrl={gameState.loginBackground}
@@ -763,7 +712,6 @@ export default function App() {
             onApprovePlayerTurn={handleApprovePlayerTurn}
             onRejectPlayerTurn={handleRejectPlayerTurn}
             onConsumeBonus={handleConsumeBonus}
-            onUpdateSkin={handleUpdateSkin}
           />
         </CrashGuard>
       )}
@@ -783,7 +731,6 @@ export default function App() {
           onApprovePlayerTurn={handleApprovePlayerTurn}
           onRejectPlayerTurn={handleRejectPlayerTurn}
           onConsumeBonus={handleConsumeBonus}
-          onGrantItem={handleGrantItem}
           onClose={() => {
             setScreen("board");
             localStorage.setItem("hapstore_screen", "board");

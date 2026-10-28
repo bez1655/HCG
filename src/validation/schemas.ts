@@ -110,13 +110,6 @@ export const botRejectTurnSchema = z.object({
   admin: z.string().max(64).optional(),
 });
 
-/** Выдача девайса игроку администратором. */
-export const botGrantItemSchema = z.object({
-  playerId: z.string().trim().min(1).max(64),
-  item: z.enum(["shield", "loaded_dice", "magnet"]),
-  admin: z.string().max(64).optional(),
-});
-
 /** Личное сообщение игроку от администратора через бота. */
 export const botMessagePlayerSchema = z.object({
   /** Хендл, псевдоним или id игрока — админ пишет то, что видит. */

@@ -11,7 +11,6 @@
  * про него бы забыли — классический источник вранья в интерфейсе.
  */
 import { Cell, CellType } from "../types";
-import { DROP_BOX_CELL_IDS } from "./rules";
 
 export interface GuideEntry {
   /** Номера клеток этого вида, по возрастанию. */
@@ -69,9 +68,6 @@ export function describeEffect(cell: Cell): string {
     case CellType.START:
       return "Начало пути";
     default:
-      if (DROP_BOX_CELL_IDS.includes(cell.id)) {
-        return "Кибер-дроп: выбор из 3 кейсов с ценными наградами";
-      }
       return "Обычная клетка, ничего не происходит";
   }
 }

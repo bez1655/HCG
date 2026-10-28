@@ -8,14 +8,8 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-10-27.5";
+export const BUILD = "2026-10-10.7";
 export const FEATURES = [
-  "neon magnet prize attractor and luck streak fever mode x2",
-  "auto-gift cyber-gear for batch purchases and admin quick-grant controls",
-  "custom cyber-chip skins and neon aura customisation",
-  "cyber-inventory (shield firewall and loaded dice chips)",
-  "cyber-drop 3-box interactive choice",
-  "tactile telegram haptic feedback and token neon trails",
   "horror alias swap on next login",
   "halloween chips and horror aliases",
   "turn request journal",

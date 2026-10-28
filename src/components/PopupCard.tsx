@@ -1,6 +1,5 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { hapticImpact, hapticNotification } from "../utils/haptics";
 
 interface PopupCardProps {
   popup: {
@@ -21,10 +20,13 @@ export default function PopupCard({ popup, onClose, onRestartLap }: PopupCardPro
   // Trigger Telegram HapticFeedback when popup is shown
   React.useEffect(() => {
     if (popup) {
-      if (isWin) {
-        hapticNotification("success");
-      } else {
-        hapticNotification("warning");
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg && tg.HapticFeedback) {
+        if (isWin) {
+          tg.HapticFeedback.notificationOccurred("success");
+        } else {
+          tg.HapticFeedback.notificationOccurred("warning");
+        }
       }
     }
   }, [popup, isWin]);
@@ -179,7 +181,10 @@ export default function PopupCard({ popup, onClose, onRestartLap }: PopupCardPro
               {isWin && onRestartLap && popup.playerId && (
                 <button
                   onClick={() => {
-                    hapticImpact("heavy");
+                    const tg = (window as any).Telegram?.WebApp;
+                    if (tg && tg.HapticFeedback) {
+                      tg.HapticFeedback.impactOccurred("heavy");
+                    }
                     onRestartLap(popup.playerId!);
                     onClose();
                   }}
@@ -191,7 +196,10 @@ export default function PopupCard({ popup, onClose, onRestartLap }: PopupCardPro
 
               <button
                 onClick={() => {
-                  hapticImpact("medium");
+                  const tg = (window as any).Telegram?.WebApp;
+                  if (tg && tg.HapticFeedback) {
+                    tg.HapticFeedback.impactOccurred("medium");
+                  }
                   onClose();
                 }}
                 className={`w-full py-3.5 font-bold uppercase tracking-widest rounded-xl transition-all duration-200 active:scale-[0.98] ${

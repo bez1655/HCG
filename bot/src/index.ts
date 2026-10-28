@@ -383,11 +383,9 @@ const ADMIN_HELP_TEXT =
   "/requests — сводка: заявки, запросы ходов, невыданные призы\n" +
   "/pending — заявки на регистрацию с кнопками\n" +
   "/players — выгрузить полный список игроков файлом\n\n" +
-  "<b>Ходы и девайсы</b>\n" +
+  "<b>Ходы</b>\n" +
   "/turns &lt;кого&gt; [сколько] — выдать ходы без заявки\n" +
-  "   например: <code>/turns Бэтмен 3</code>\n" +
-  "/gift &lt;кого&gt; &lt;shield|dice|magnet&gt; — выдать кибер-девайс (+1 Щит, +1 Кубик или +1 Магнит)\n" +
-  "   например: <code>/gift Бэтмен magnet</code>\n\n" +
+  "   например: <code>/turns Бэтмен 3</code>\n\n" +
   "<b>Связь с игроком</b>\n" +
   "/msg &lt;кого&gt; &lt;текст&gt; — личное сообщение игроку\n" +
   "   по псевдониму: <code>/msg Бэтмен Ваш приз готов</code>\n" +
@@ -753,7 +751,6 @@ bot.command("turns", adminManager.middleware(), async (ctx) => {
       success?: boolean;
       playerName?: string;
       turns?: number;
-      bonusGift?: string;
       error?: string;
     };
 
@@ -767,8 +764,7 @@ bot.command("turns", adminManager.middleware(), async (ctx) => {
       );
       return ctx.reply(
         `🟢 Игроку <b>${escapeHtml(data.playerName || playerName)}</b> выдано ` +
-          `<b>${granted}</b> ${pluralizeTurns(granted)}. Срок не ограничен.` +
-          (data.bonusGift ? `\n🎁 <b>Подарок от Hapstore:</b> ${escapeHtml(data.bonusGift)}` : ""),
+          `<b>${granted}</b> ${pluralizeTurns(granted)}. Срок не ограничен.`,
         { parse_mode: "HTML" }
       );
     }
@@ -794,63 +790,6 @@ bot.command("turns", adminManager.middleware(), async (ctx) => {
     });
   } catch (e: any) {
     return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
-  }
-});
-
-/**
- * /gift <имя игрока> <shield|dice> — выдать кибер-девайс конкретному игроку.
- */
-bot.command("gift", adminManager.middleware(), async (ctx) => {
-  const parts = ctx.message.text.trim().split(/\s+/).slice(1);
-  if (parts.length < 2) {
-    return ctx.reply(
-      "Использование: /gift <имя игрока> <shield|dice|magnet>\n" +
-        "Например:\n" +
-        "• /gift Кибер shield — выдать 🛡️ Щит «Файрвол»\n" +
-        "• /gift Кибер dice — выдать 🎲 «Заряженный кубик»\n" +
-        "• /gift Кибер magnet — выдать 🧲 «Неоновый магнит»"
-    );
-  }
-
-  const rawItem = parts[parts.length - 1].toLowerCase();
-  let item: "shield" | "loaded_dice" | "magnet" | null = null;
-  if (rawItem === "shield" || rawItem === "щит" || rawItem === "1") {
-    item = "shield";
-  } else if (rawItem === "dice" || rawItem === "кубик" || rawItem === "2") {
-    item = "loaded_dice";
-  } else if (rawItem === "magnet" || rawItem === "магнит" || rawItem === "3") {
-    item = "magnet";
-  }
-
-  if (!item) {
-    return ctx.reply("Неизвестный предмет. Укажите shield (щит), dice (кубик) или magnet (магнит).");
-  }
-
-  const playerName = parts.slice(0, -1).join(" ");
-  const adminName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
-
-  try {
-    const res = await internalFetch("/api/admin/bot-grant-item", {
-      method: "POST",
-      body: JSON.stringify({ playerId: playerName, item, admin: adminName }),
-    });
-    const data = (await res.json()) as {
-      success?: boolean;
-      playerName?: string;
-      itemName?: string;
-      error?: string;
-    };
-
-    if (res.ok && data.success) {
-      return ctx.reply(
-        `🛠️ Игроку <b>${escapeHtml(data.playerName || playerName)}</b> выдан кибер-девайс: ` +
-          `<b>${escapeHtml(data.itemName || item)}</b>!`,
-        { parse_mode: "HTML" }
-      );
-    }
-    return ctx.reply(`⚠️ Ошибка: ${escapeHtml(data.error || "Не удалось выдать девайс")}`);
-  } catch (err: any) {
-    return ctx.reply(`❌ Ошибка связи с сервером игры: ${err.message || err}`);
   }
 });
 

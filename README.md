@@ -1,160 +1,301 @@
-# ⚡ Hapstore Cyber Game (HCG)
+# Hapstore: THE CORE
 
-<p align="center">
-  <img src="public/android-chrome-512x512.png" alt="Hapstore Cyber Game" width="128" />
-</p>
-
-<p align="center">
-  <b>Киберпанк-настольная игра нового поколения для покупателей Hapstore в Telegram Mini Apps</b>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white" alt="Node.js" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React" />
-  <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite" />
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/Telegram-Mini%20Apps-26A5E4?logo=telegram&logoColor=white" alt="Telegram" />
-</p>
+A full-stack interactive game and dashboard platform built with React, TypeScript, Express, Vite, Socket.IO, and Firebase, styled with Tailwind CSS and the Orbitron typography system.
 
 ---
 
-## 🎮 Об игре
+## 🛠️ Tech Stack
 
-**Hapstore Cyber Game (HCG)** — флагманская многопользовательская веб-игра в сеттинге киберпанка, интегрированная прямо в **Telegram Mini Apps** и неразрывно связанная с покупками в магазине электроники и девайсов **Hapstore**.
-
-Игроки бросают кубик, перемещают свои неоновые фишки по 65 секторам высокотехнологичного игрового поля, применяют тактические девайсы из инвентаря, вскрывают кейсы Кибер-дропа, разгоняют стрики удачи в режиме **Fever Mode** и выигрывают ценные скидочные промокоды, подарочные сатоши и супер-призы.
-
-* 🌐 **Web App:** [hapstore.cyber-game.online](https://hapstore.cyber-game.online)
-* 🤖 **Telegram Бот:** [@hcg_tg_bot](https://t.me/hcg_tg_bot)
-
----
-
-## ⚡ Ключевые игровые механики
-
-### 🎒 1. Кибер-снаряжение (Инвентарь девайсов)
-Перед каждым броском кубика игрок может задействовать один из тактических девайсов в нижней панели инвентаря:
-
-* 🛡️ **Щит «Файрвол» (`shield`):** полностью поглощает штрафные откаты назад на клетках ловушек («Змеи», «Полиция», откат на старт). Фишка остаётся на месте!
-* 🎲 **«Заряженный кубик» (`loaded_dice`):** гарантирует выброс только максимальных значений — **5 или 6 клеток**, позволяя перепрыгнуть опасные сектора.
-* 🧲 **«Неоновый магнит» (`magnet`):** если после броска фишка остановилась всего в **1 шаге** от призовой клетки (Колба или Биткоин) впереди или позади — магнит автоматически притягивает фишку на приз и активирует награду!
-
-### 🔥 2. «Стрик удачи» (Кибер-серия / Fever Mode)
-* **Как активируется:** совершите **3 успешных хода подряд** без попадания на ловушки и штрафы.
-* **Визуальный эффект:** фишка окутывается сияющей золотой неонаурой (`#FFD700`), испускает вращающиеся импульсные лучи, а над ней появляется бейдж **`🔥 FEVER x2`**.
-* **Бонус следующего хода:**
-  * 🎁 **Удвоение награды (x2):** любой выпавший приз (скидка или крипто-бонус) удваивается!
-  * 🎲 **Бесплатный экстра-бросок:** игрок получает право на дополнительный ход без списания баланса!
-
-### 📦 3. Кибер-дроп (Интерактивный выбор из 3 кейсов)
-При попадании на особые технологические сектора поля (**12, 28, 42, 53**) запускается режим Кибер-дропа:
-* Игрок выбирает один из 3 закрытых дроп-боксов: *Альфа*, *Бета* или *Гамма*.
-* **Награды дропа:** мгновенный рывок вперёд на +2 или +3 сектора, купоны на скидку **10% и 15% в Hapstore** либо пополнение запаса девайсов (Щиты, Кубики, Магниты).
-
-### 🎭 4. Кастомизация фишек и неоновый облик
-В разделе «Мой кабинет» → «Облик фишки» игроки могут настроить индивидуальный вид своей фишки:
-* **13 уникальных кибер-моделей:** *Кибер-Дрон*, *Квантовое Ядро*, *Нейро-Матрица*, *Плазменный Вихрь*, *Кибер-Призрак*, *Техно-Око*, *Импульсный Чип*, *Хакерский Череп*, *Неоновый Кристалл*, *Био-Реактор*, *Голо-Щит*, *Кибер-Дракон*, *Орбитальный Модуль*.
-* **6 оттенков неоновой ауры:** Кибер-Мята (`#00FFAA`), Неоновый Циан (`#06B6D4`), Лазерная Маджента (`#D946EF`), Плазменный Янтарь (`#F59E0B`), Ультрафиолет (`#8B5CF6`), Кибер-Золото (`#EAB308`).
-* Плавное вращение, неоновые шлейфы и яркий маркер «ВЫ» над собственной фишкой на доске.
-
-### 🎁 5. Подарки за покупки и панель быстрой выдачи
-* **Автоматические подарки за пакеты ходов:**
-  * От **3 ходов** в чеке — автоматически начисляется 🛡️ **Щит «Файрвол»**.
-  * От **5 ходов** в чеке — начисляется **полный комплект**: 🛡️ **Щит** + 🎲 **Заряженный кубик** + 🧲 **Неоновый магнит**!
-* **Быстрая выдача в Админ-панели:**
-  * Кнопки мгновенного начисления в карточке игрока: `[+1 🛡️ Щит]`, `[+1 🎲 Кубик]`, `[+1 🧲 Магнит]`.
-* **Выдача через Telegram-бота:**
-  * Команда: `/gift <псевдоним> <shield|dice|magnet>`.
-
-### 📳 6. Тактильный отклик (Telegram Haptics)
-* Полная интеграция с вибромотором устройства через Telegram WebApp HapticFeedback API.
-* Реалистичная тактильная отдача при броске, стуке кубика, срабатывании ловушек и триггере магнита.
+- **Frontend:** React 19, Vite 6, Tailwind CSS v4, Lucide Icons, Motion
+- **Backend:** Node.js 22+, Express, Socket.IO, Firestore via the Firebase Admin SDK
+- **Bot:** Telegraf (separate container, sole Telegram long-polling consumer)
+- **Typography:** Orbitron & Futuristic Design System
+- **Build Tooling:** TypeScript, `tsx`, `esbuild`, Vitest
 
 ---
 
-## 🛠️ Архитектура и стек технологий
+## 🚀 Getting Started
 
-```
-┌────────────────────────────────────────────────────────┐
-│                   Telegram Mini App                    │
-│   (React 19 + TypeScript + Vite + Tailwind CSS + Motion)│
-└──────────────────────────┬─────────────────────────────┘
-                           │ WebSocket / HTTPS
-┌──────────────────────────▼─────────────────────────────┐
-│                 HCG Game Server (Node.js)              │
-│       Express + Socket.IO + CSPRNG Authoritative Dice  │
-└────────────┬─────────────────────────────┬─────────────┘
-             │                             │
-┌────────────▼────────────┐   ┌────────────▼─────────────┐
-│     HCG Telegram Bot    │   │  Двойная персистентность │
-│   Telegraf + Proxy Queue│   │  • Docker Volume (500ms) │
-│                         │   │  • Firestore SDK (Cloud) │
-└─────────────────────────┘   └──────────────────────────┘
-```
+### 1. Prerequisites
 
-* **Frontend:** React 19, TypeScript, Vite 6, Tailwind CSS, Motion (Framer Motion), Lucide Icons.
-* **Backend:** Node.js 22+, Express, Socket.IO, crypto CSPRNG.
-* **Telegram Bot:** Telegraf в изолированном контейнере с защищённой очередью и автоматическим сборщиком прокси (`hcg_proxy`).
-* **Персистентность:** Двойная система сохранения данных — локальный диск в Docker volume (`hcg_hapstore-data`) + облачная репликация в Firestore.
+Make sure you have **Node.js v22 or higher** and `npm` installed
+(`firebase-admin` and some transitive dependencies require Node 22+).
 
----
+### 2. Installation
 
-## 🚀 Быстрый старт (Локально)
-
-### Требования
-* Node.js v22+
-* npm
-
-### Установка и запуск
+Clone the repository and install dependencies:
 
 ```bash
-# 1. Клонирование репозитория
-git clone https://github.com/bez1655/HCG.git
-cd HCG
-
-# 2. Установка зависимостей
+git clone <your-repository-url>
+cd <repository-folder>
 npm install
+```
 
-# 3. Настройка окружения
+### 3. Environment Variables
+
+Copy `.env.example` to `.env` and fill in your secrets:
+
+```bash
 cp .env.example .env
-npm run hash-password -- 'ваш_надежный_пароль_админа'
+```
 
-# 4. Запуск сервера и клиента в режиме разработки
+Generate the required secrets:
+
+```bash
+npm run hash-password -- 'your-strong-admin-password'
+```
+
+The command prints `ADMIN_PASSWORD_HASH`, `SESSION_SECRET` and
+`INTERNAL_API_SECRET` — copy all three into `.env`.
+
+Required environment variables (the server refuses to start in production
+without them):
+
+- `ADMIN_PASSWORD_HASH`: PBKDF2 `salt:hash` of the admin password. The password
+  itself is never stored anywhere.
+- `SESSION_SECRET`: signing key for session tokens.
+- `INTERNAL_API_SECRET`: shared secret between the server and the bot container,
+  protecting the internal `/api/admin/bot-*` endpoints.
+
+Optional:
+
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `TELEGRAM_ADMIN_USERNAME`
+- `WEB_APP_URL`: public origin, also used for the CORS allow-list
+- `DATA_DIR`: where persistent state is written (defaults to `./data`)
+- `FIREBASE_*`: Firestore configuration
+- `LEGACY_AES_PASSWORD`: only to migrate passwords from a pre-hardening release
+
+> **Never commit `.env` or `firebase-applet-config.json`.** Both are ignored by
+> git; Firebase credentials belong in environment variables.
+
+### 4. Running locally in Development Mode
+
+To start the full-stack server (Express + Vite hot reloading):
+
+```bash
 npm run dev
 ```
-Приложение откроется на `http://localhost:3000`.
+
+The application will be available at `http://localhost:3000`.
 
 ---
 
-## 🐳 Развёртывание и обновление на VPS
+## 📦 Production Build & Launch
 
-Развёртывание осуществляется через готовые скрипты автоматизации:
+To build the production client assets and bundle the server:
 
 ```bash
-# Распаковка релиза рядом с рабочей директорией:
-mkdir -p /var/www/hcg-update
-tar -xzf hcg-release-2026-10-27.tar.gz -C /var/www/hcg-update
+npm run build
+```
 
-# Применение обновления:
-cd /var/www/hcg
-bash deploy/ВСЁ-НА-VPS.sh пересобрать
+To start the production server:
 
-# Проверка статуса сервисов и безопасности:
-bash deploy/hcg-check.sh
+```bash
+npm start
+```
+
+## 🗂 Project Layout
+
+```
+server.ts                  HTTP + Socket.IO wiring
+src/
+  config/env.ts            the only module that reads process.env
+  auth/session.ts          signed session tokens, legacy migration
+  game/rules.ts            movement and prize rules (pure, unit-tested)
+  game/data/cells.json     the 65-cell board
+  persistence/firestore.ts Admin SDK access layer
+  persistence/files.ts     atomic disk writes
+  telegram/notifier.ts     outbound Telegram delivery
+  telegram/initData.ts     Mini App signature verification (password-free entry)
+  game/registrations.ts    persisted queue of pending registration requests
+  validation/schemas.ts    zod schemas for every untrusted input
+  utils/logger.ts          structured logging
+  utils/security.ts        hashing, escaping, token signing
+  i18n/                    translation catalogue (ru/en)
+bot/
+  src/index.ts             commands, buttons, admin decisions
+  src/registration.ts      registration request flow
+  src/adminManager.ts      trusted administrator list
+  src/asyncQueue.ts        send queue with 429 back-off
+tests/e2e/
+  server.e2e.test.ts       HTTP + Socket.IO against the real bundle
+  bot.e2e.test.ts          the real bot against a stub Telegram API
 ```
 
 ---
 
-## 🔒 Безопасность и честность
+## 🤖 Joining the Game
 
-* **Серверный ГСЧ:** Все броски кубика, дропы и магниты рассчитываются строго на сервере через криптографически стойкий генератор `crypto.randomInt`. Клиентский код не может повлиять на результат.
-* **HMAC-SHA256 аутентификация:** Проверка подлинности Telegram `initData` с секретным ключом бота.
-* **Защита персональных данных:** Реальные Telegram ID и ники игроков скрыты из публичного состояния доски. Игроки видят друг друга только под анонимными кибер-псевдонимами.
-* **Изоляция секретов:** Файл конфигурации `.env` защищён правами `chmod 600` и никогда не затирается при обновлениях.
+Registration is driven entirely from the bot; nobody can create their own
+account.
+
+```
+player: /start  ->  «📝 ЗАПРОСИТЬ РЕГИСТРАЦИЮ»  (or /register)
+            |
+            v
+server:  request is queued on disk, admins are notified
+            |
+            v
+admin:   «✅ ЗАРЕГИСТРИРОВАТЬ»            «❌ ОТКАЗАТЬ»
+            |                                  |
+            v                                  v
+server:  player created, 8-10 char          request dropped,
+         password generated & hashed        player informed
+            |
+            v
+bot:     login + password sent to the player's private chat
+```
+
+**Afterwards the password is rarely needed.** Inside Telegram the Mini App
+sends the signed `initData` blob to `POST /api/telegram/auth`; its HMAC is
+verified against the bot token, so pressing «🎮 ИГРАТЬ» signs the player in
+directly. The password only matters for signing in from an ordinary browser.
+
+Two consequences worth knowing:
+
+- **An administrator must press `/start` at least once.** Telegram refuses to
+  deliver a private message addressed to `@handle` — only to a numeric chat id,
+  which the bot learns from that first interaction. Until then registration
+  requests cannot be delivered; the bot logs this loudly and `/pending` lists
+  everything that is waiting.
+- **A player without a Telegram `@username` cannot register.** The handle is
+  the in-game name, so the bot asks them to set one first.
+
+Generated passwords are 8–10 characters drawn from lower-case, upper-case,
+digits and symbols, with at least one of each, produced with `crypto.randomInt`
+(no modulo bias). Look-alike characters (`0O1lI`) are excluded because the
+password is retyped by hand from a phone screen. The plaintext exists only in
+the response that delivers it and is never logged, never shown to the
+administrator and never written to disk — only its PBKDF2 hash is stored.
+
+Admin commands: `/pending`, `/admin_logs`, `/set_admin`, `/list_admins`,
+`/reload_admins`.
+
+## ✅ Quality Gates
+
+```bash
+npm run lint        # tsc --noEmit + eslint
+npm run format      # prettier --write
+npm run test        # unit tests (fast)
+npm run test:e2e    # boots the real bundle and drives it over HTTP/Socket.IO
+npm run test:all    # both suites
+npm run build       # client + server bundles
+npm run check-secrets
+```
+
+## 🔧 Operations
+
+```bash
+npm run setup-env -- --password '<admin>'   # generate .env
+bash scripts/check-deployment.sh            # pre-flight check on the host
+npm run snapshot:list                       # list state snapshots
+npm run restore -- --latest                 # restore the newest snapshot
+```
+
+`GET /healthz` reports liveness; `GET /metrics` exposes Prometheus gauges and
+requires the internal token.
+
+CI runs all of the above plus `npm audit`, secret scanning and Docker builds on
+every push and pull request (`.github/workflows/ci.yml`).
 
 ---
 
-## 📜 Лицензия
+## 🔐 Security Model
 
-Проект разработан эксклюзивно для **Hapstore Cyber Game**.  
-Все права защищены © 2026.
+- **Authentication** — `/api/login` verifies a PBKDF2 hash (100k iterations,
+  per-user salt, constant-time compare) and returns a signed, expiring session
+  token. Socket.IO validates that token during the handshake, so a client can
+  never act on behalf of another player by supplying a different id.
+- **Telegram sign-in** — `/api/telegram/auth` verifies the `initData` HMAC
+  against the bot token before issuing the same session token, and matches the
+  player by **numeric Telegram id** first. Handles can be reassigned by their
+  owner; ids cannot. A forged or replayed payload is rejected, and an unknown
+  user is never created implicitly — they are told to request registration.
+- **Authorisation** — admin rights come from the signed token only. Every
+  privileged socket event and internal HTTP endpoint is guarded server-side.
+- **Dice fairness** — roll results are generated with `crypto.randomInt` on the
+  server; the client merely animates the value it is told.
+- **Data protection** — Firestore is reached only through the Admin SDK with a
+  service account, so `firestore.rules` denies **all** public access. Passwords
+  are stored as one-way hashes and are never returned by any endpoint, and
+  `/api/state` omits personal Telegram identifiers.
+- **Graceful degradation** — the credential is verified at boot; if Firestore is
+  unreachable the server logs the reason and keeps running on local disk
+  persistence rather than silently dropping writes.
+- **Hardening** — CORS allow-list, CSP and related headers, request rate limits,
+  a 128 kB body cap, atomic state writes and graceful shutdown flushing.
+
+---
+
+## 🔥 Firestore Setup
+
+The server persists state through the **Admin SDK**, which authenticates with a
+service account and bypasses security rules. That is what allows the rules to
+stay locked down (`allow read, write: if false`).
+
+1. Firebase Console → Project settings → Service accounts →
+   **Generate new private key**.
+2. Supply it through **one** of:
+
+   ```bash
+   # A. contents as a single-line JSON string (secret managers, Cloud Run)
+   FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"..."}'
+
+   # B. path to the key file (mount it read-only in Docker)
+   GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/service-account.json
+   ```
+
+3. Deploy the rules: `firebase deploy --only firestore:rules`
+
+**Where does this go?** On the machine that runs `docker compose` — the `.env`
+file must sit next to `docker-compose.yml`, because Compose only reads a `.env`
+from its own working directory. It is never committed and never baked into the
+image. Validate the host before deploying:
+
+```bash
+bash scripts/check-deployment.sh
+```
+
+Without a service account the server still starts and uses local disk
+persistence; `GET /healthz` reports `"firestore":"disabled"`.
+
+> The Firebase **web API key** is not a server credential. It is ignored by this
+> integration and cannot be used to reach the database once the rules are closed.
+
+---
+
+## 🐳 Docker Deployment
+
+You can run the application using Docker and Docker Compose:
+
+```bash
+docker-compose up --build -d
+```
+
+Or build and run manually:
+
+```bash
+docker build -t hapstore-core .
+docker run -p 3000:3000 --env-file .env hapstore-core
+```
+
+---
+
+## 📤 Pushing to GitHub
+
+To publish this project to GitHub:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit - Hapstore: THE CORE"
+git branch -M main
+git remote add origin https://github.com/<your-username>/<your-repo-name>.git
+git push -u origin main
+```
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License.

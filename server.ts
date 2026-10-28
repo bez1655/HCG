@@ -10,8 +10,7 @@ import { hashPassword, verifyPassword, escapeHtml, generatePassword } from "./sr
 import * as firestore from "./src/persistence/firestore";
 import { atomicWrite, ensureDir } from "./src/persistence/files";
 import { choosePersistedState } from "./src/persistence/chooseState";
-import { resolveMove, isMilestone, generateDropBoxOptions, isDropBoxCell } from "./src/game/rules";
-import { getSkinBySrc } from "./src/game/skins";
+import { resolveMove, isMilestone } from "./src/game/rules";
 import { pickAlias, publicName, isHorrorAlias, takenHorrorNames } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
 import {
@@ -88,7 +87,6 @@ import {
   telegramAuthSchema,
   botApproveTurnSchema,
   botRejectTurnSchema,
-  botGrantItemSchema,
   botMessagePlayerSchema,
   botBroadcastSchema,
   botPlayerHistorySchema,
@@ -503,7 +501,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-10-27.5";
+const SERVER_BUILD = "2026-10-10.7";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -599,15 +597,6 @@ function migrateState(raw: any): GameState {
       state.hideTokensAfterHours = DEFAULT_HIDE_AFTER_HOURS;
     }
     log.info("Migration: Applied v4 -> v5 (players carry a last-seen stamp).");
-  }
-
-  // Ensure all players carry a valid inventory array
-  if (Array.isArray(state.players)) {
-    for (const p of state.players) {
-      if (!Array.isArray(p.inventory)) {
-        p.inventory = ["shield", "loaded_dice"];
-      }
-    }
   }
 
   state.schemaVersion = SCHEMA_VERSION;
@@ -961,8 +950,6 @@ export interface ApproveTurnResult {
   player?: Player;
   /** Present when ok === true: how many rolls the approval opened. */
   turns?: number;
-  /** Present when an auto-gift was granted (e.g. for batches of >= 3 turns). */
-  bonusGift?: string;
   /**
    * Решение по этой заявке уже принято.
    *
@@ -1075,25 +1062,6 @@ function approveTurn(
    */
   const turns = clampTurns(options.turns, clampTurns(player.turnsRequested, 1));
 
-  /*
-   * Подарок от магазина Hapstore за покупку / выдачу пачки от 3 бросков:
-   * от 3 ходов: +1 Щит «Файрвол»
-   * от 5 ходов: +1 Щит «Файрвол» и +1 «Заряженный кубик»
-   */
-  let bonusGift: string | undefined;
-  if (turns >= 3) {
-    if (!Array.isArray(player.inventory)) {
-      player.inventory = [];
-    }
-    if (turns >= 5) {
-      player.inventory.push("shield", "loaded_dice", "magnet");
-      bonusGift = "Щит «Файрвол» 🛡️, «Заряженный кубик» 🎲 и «Неоновый магнит» 🧲";
-    } else {
-      player.inventory.push("shield");
-      bonusGift = "Щит «Файрвол» 🛡️";
-    }
-  }
-
   // Дата в далёком будущем — только ради старого APK, который ещё проверяет
   // окно. Сервер на неё не смотрит: право на бросок держит turnsApproved.
   player.turnApprovedUntil = Date.now() + LEGACY_WINDOW_MS;
@@ -1117,8 +1085,7 @@ function approveTurn(
     player.id,
     `🟢 <b>ХОД ОДОБРЕН</b>\nИгрок: <b>${escapeHtml(player.name)}</b>\n` +
       `Выдано: <b>${turns}</b> ${pluralizeTurns(turns)}` +
-      `${approvedBy ? `\nКем: ${escapeHtml(approvedBy)}` : ""}` +
-      `${bonusGift ? `\n🎁 <b>Подарок от Hapstore:</b> ${escapeHtml(bonusGift)}` : ""}`
+      `${approvedBy ? `\nКем: ${escapeHtml(approvedBy)}` : ""}`
   );
 
   /*
@@ -1143,31 +1110,21 @@ function approveTurn(
     timestamp: new Date().toLocaleTimeString(),
     type: "admin",
   });
-  if (bonusGift) {
-    addLog({
-      id: "gift_" + Date.now(),
-      message: `🎁 Подарок от магазина Hapstore! ${shownName(player)} начислен бонусный девайс [${bonusGift}] за пакет из ${turns} ${pluralizeTurns(turns)}!`,
-      timestamp: new Date().toLocaleTimeString(),
-      type: "admin",
-    });
-  }
   recordTurnGrant(player, turns);
 
   if (player.telegramId || player.name) {
-    let msg =
+    void sendTelegramMessage(
+      player.telegramId || player.name,
       turns > 1
         ? `ПОРА СДЕЛАТЬ БРОСОК — вам одобрено ${turns} ${pluralizeTurns(turns)} подряд, ` +
             `ждать одобрения между ними не нужно.`
-        : "ПОРА СДЕЛАТЬ БРОСОК";
-    if (bonusGift) {
-      msg += `\n\n🎁 <b>Подарок от магазина Hapstore:</b>\nВам начислен бонусный кибер-девайс: <b>${bonusGift}</b>! Активируйте его перед броском на игровом поле.`;
-    }
-    void sendTelegramMessage(player.telegramId || player.name, msg);
+        : "ПОРА СДЕЛАТЬ БРОСОК"
+    );
   }
 
   saveState();
   broadcastSlices("players", "logs", "meta");
-  return { ok: true, player, turns, bonusGift };
+  return { ok: true, player, turns };
 }
 
 /** Withdraw a pending turn request. Mirror of approveTurn(). */
@@ -2425,59 +2382,7 @@ async function start() {
       const status = result.player ? 409 : 404;
       return res.status(status).json({ error: result.error });
     }
-    return res.json({
-      success: true,
-      playerName: result.player!.name,
-      turns: result.turns,
-      bonusGift: result.bonusGift,
-    });
-  });
-
-  /**
-   * Выдать девайс (Щит или Кубик) игроку через бота Telegram.
-   */
-  app.post("/api/admin/bot-grant-item", requireInternalAuth, (req, res) => {
-    const parsed = validate(botGrantItemSchema, req.body);
-    if (!parsed.ok) {
-      return res.status(400).json({ error: parsed.error });
-    }
-    const { playerId, item, admin } = parsed.data;
-
-    const needle = playerId.toLowerCase();
-    const player = gameState.players.find(
-      (p) => p.id === playerId || p.name.toLowerCase() === needle
-    );
-    if (!player) return res.status(404).json({ error: "Игрок не найден" });
-
-    if (!Array.isArray(player.inventory)) {
-      player.inventory = [];
-    }
-    player.inventory.push(item);
-
-    const itemName =
-      item === "shield"
-        ? "Щит «Файрвол» 🛡️"
-        : item === "loaded_dice"
-          ? "«Заряженный кубик» 🎲"
-          : "«Неоновый магнит» 🧲";
-    addLog({
-      id: "grant_" + Date.now(),
-      message: `🛠️ ${admin ? escapeHtml(admin) : "Администратор"} выдал девайс [${itemName}] игроку ${shownName(player)}!`,
-      timestamp: new Date().toLocaleTimeString(),
-      type: "admin",
-    });
-
-    if (player.telegramId || player.name) {
-      void sendTelegramMessage(
-        player.telegramId || player.name,
-        `🎁 <b>Подарок от администратора Hapstore!</b>\nВам начислен кибер-девайс: <b>${itemName}</b>.\n` +
-          `Активируйте его перед броском на игровом поле!`
-      );
-    }
-
-    saveState();
-    broadcastState();
-    return res.json({ success: true, playerName: player.name, item, itemName });
+    return res.json({ success: true, playerName: result.player!.name, turns: result.turns });
   });
 
   /**
@@ -2997,7 +2902,7 @@ async function start() {
     });
 
     // Roll Request
-    socket.on("roll:request", (payload?: { useItem?: string }) => {
+    socket.on("roll:request", () => {
       /*
        * Unconditional entry log.
        *
@@ -3010,7 +2915,6 @@ async function start() {
         authPlayerId,
         role: socket.data.role,
         turnStatus: gameState.turnStatus,
-        useItem: payload?.useItem,
       });
 
       /*
@@ -3167,60 +3071,9 @@ async function start() {
       // играть. Без этой отметки его фишка исчезла бы прямо во время партии.
       player.lastSeenAt = Date.now();
 
-      // Ensure player has inventory initialized
-      if (!Array.isArray(player.inventory)) {
-        player.inventory = ["shield", "loaded_dice"];
-      }
-
-      let steps: number;
-      let shieldActive = false;
-      let magnetActive = false;
-      const requestedItem = payload?.useItem;
-
-      if (requestedItem === "loaded_dice") {
-        const idx = player.inventory.indexOf("loaded_dice");
-        if (idx >= 0) {
-          player.inventory.splice(idx, 1);
-          steps = crypto.randomInt(5, 7); // 5 or 6
-          addLog({
-            id: "item_" + Date.now(),
-            message: `🎲 ${shownName(player)} применил [Заряженный кубик]!`,
-            timestamp: new Date().toLocaleTimeString(),
-            type: "system",
-          });
-        } else {
-          steps = crypto.randomInt(1, 7);
-        }
-      } else if (requestedItem === "shield") {
-        const idx = player.inventory.indexOf("shield");
-        if (idx >= 0) {
-          player.inventory.splice(idx, 1);
-          shieldActive = true;
-          addLog({
-            id: "item_" + Date.now(),
-            message: `🛡️ ${shownName(player)} активировал [Файрвол-щит]!`,
-            timestamp: new Date().toLocaleTimeString(),
-            type: "system",
-          });
-        }
-        steps = crypto.randomInt(1, 7);
-      } else if (requestedItem === "magnet") {
-        const idx = player.inventory.indexOf("magnet");
-        if (idx >= 0) {
-          player.inventory.splice(idx, 1);
-          magnetActive = true;
-          addLog({
-            id: "item_" + Date.now(),
-            message: `🧲 ${shownName(player)} активировал [Неоновый магнит]!`,
-            timestamp: new Date().toLocaleTimeString(),
-            type: "system",
-          });
-        }
-        steps = crypto.randomInt(1, 7);
-      } else {
-        steps = crypto.randomInt(1, 7);
-      }
-
+      // Roll d6 (1 to 6) using a cryptographically secure RNG. The result is
+      // authoritative: the client only animates the number the server picked.
+      const steps = crypto.randomInt(1, 7);
       player.lastRoll = steps;
 
       // Tell the roller which face to render before the state broadcast.
@@ -3231,68 +3084,11 @@ async function start() {
       const fromCell = player.cell;
 
       // Movement and prize rules live in src/game/rules.ts (pure + unit-tested).
-      const feverActive = !!player.feverMode;
-      const outcome = resolveMove(player, steps, gameState.cells, {
-        shieldActive,
-        magnetActive,
-        feverActive,
-      });
+      const outcome = resolveMove(player, steps, gameState.cells);
       player.cell = outcome.finalCell;
       const bonusText = outcome.effectText;
       const extraRoll = outcome.extraRoll;
       const cell = outcome.cell;
-
-      // Обработка «Стрика удачи» (Кибер-серия / Fever Mode)
-      const isTrap =
-        outcome.cell &&
-        (outcome.cell.type === CellType.PENALTY || outcome.cell.type === CellType.SNAKE);
-
-      if (isTrap && !outcome.shieldBlocked) {
-        player.streak = 0;
-        player.feverMode = false;
-      } else {
-        if (feverActive) {
-          // Супер-бонус серии успешно реализован на этом ходе!
-          player.feverMode = false;
-          player.streak = 1;
-          addLog({
-            id: "fever_used_" + Date.now(),
-            message: `🔥 Режим FEVER реализован! ${shownName(player)} совершил рывок с удвоенной наградой и бесплатным экстра-броском!`,
-            timestamp: new Date().toLocaleTimeString(),
-            type: "system",
-          });
-        } else {
-          player.streak = (player.streak || 0) + 1;
-          if (player.streak >= 3) {
-            player.feverMode = true;
-            addLog({
-              id: "fever_act_" + Date.now(),
-              message: `🔥 КИБЕР-СЕРИЯ! ${shownName(player)} совершил 3 успешных хода подряд и активировал FEVER MODE! Фишка сияет золотой неонаурой, следующий ход удвоит приз и подарит экстра-бросок!`,
-              timestamp: new Date().toLocaleTimeString(),
-              type: "system",
-            });
-            io.emit("toast:achievement", {
-              title: "FEVER MODE",
-              message: `🔥 ${shownName(player)} активировал режим FEVER (3 победы подряд)!`,
-              icon: "🔥",
-              type: "milestone",
-            });
-          }
-        }
-      }
-
-      // Попадание на клетку Кибер-дропа
-      if (outcome.isDropBox) {
-        const options = generateDropBoxOptions();
-        player.pendingDropBox = {
-          cellId: outcome.finalCell,
-          options,
-        };
-        socket.emit("dropbox:available", {
-          cellId: outcome.finalCell,
-          options,
-        });
-      }
 
       /*
        * Заготовка строки отчёта.
@@ -3559,58 +3355,6 @@ async function start() {
 
       saveState();
       broadcastSlices("players", "logs", "meta");
-    });
-
-    // DropBox Pick Handler
-    socket.on("dropbox:pick", (payload?: { boxIndex: number }) => {
-      const player = gameState.players.find((p) => p.id === authPlayerId);
-      if (!player || !player.pendingDropBox) return;
-
-      const boxIndex = typeof payload?.boxIndex === "number" ? Math.floor(payload.boxIndex) : 0;
-      const options = player.pendingDropBox.options;
-      const chosen = options[boxIndex] || options[0];
-      player.pendingDropBox = null;
-
-      let resultText = "";
-      if (chosen.type === "jump") {
-        const jump = chosen.value || 2;
-        player.cell = Math.min(64, player.cell + jump);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Ускорение на +${jump} кл.!`;
-      } else if (chosen.type === "promo") {
-        const prizeRecord: PrizeRecord = {
-          at: Date.now(),
-          name: chosen.title,
-          extra: chosen.promoCode,
-          cellId: player.cell,
-          redeemed: false,
-        };
-        player.prizeLog = player.prizeLog || [];
-        player.prizeLog.push(prizeRecord);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: ${chosen.title} (${chosen.promoCode})!`;
-      } else if (chosen.type === "item" && chosen.item) {
-        player.inventory = player.inventory || [];
-        player.inventory.push(chosen.item);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Получен предмет [${chosen.title}]!`;
-      } else if (chosen.type === "penalty") {
-        const pen = chosen.value || -1;
-        player.cell = Math.max(0, player.cell + pen);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Ловушка системы (${pen} кл.)!`;
-      }
-
-      addLog({
-        id: "drop_" + Date.now(),
-        message: resultText,
-        timestamp: new Date().toLocaleTimeString(),
-        type: "system",
-      });
-
-      socket.emit("dropbox:result", {
-        chosen,
-        allOptions: options,
-      });
-
-      saveState();
-      broadcastSlices("players", "logs");
     });
 
     // Admin manual adjust player
@@ -3950,48 +3694,6 @@ async function start() {
       }
     });
 
-    // Player update custom skin & neon aura color
-    socket.on("player:update_skin", (raw: unknown) => {
-      const targetId = authPlayerId;
-      if (!targetId) {
-        socket.emit("error", "Вы не авторизованы.");
-        return;
-      }
-      if (typeof raw !== "object" || raw === null) {
-        socket.emit("error", "Неверный формат данных.");
-        return;
-      }
-      const data = raw as { chipImage?: string; color?: string };
-      const p = gameState.players.find((pl) => pl.id === targetId);
-      if (!p) return;
-
-      let changed = false;
-      if (typeof data.chipImage === "string") {
-        const cleanPath = data.chipImage.split("?")[0];
-        if (/^\/chips\/chip_(1[0-3]|[1-9])\.svg$/.test(cleanPath)) {
-          p.chipImage = data.chipImage;
-          changed = true;
-        }
-      }
-
-      if (typeof data.color === "string" && /^#[0-9a-fA-F]{6}$/.test(data.color)) {
-        p.color = data.color;
-        changed = true;
-      }
-
-      if (changed) {
-        const skin = getSkinBySrc(p.chipImage);
-        addLog({
-          id: "skin_" + Date.now(),
-          message: `🎭 Игрок ${shownName(p)} обновил облик своей фишки: [${skin.icon} ${skin.name}]!`,
-          timestamp: new Date().toLocaleTimeString(),
-          type: "system",
-        });
-        saveState();
-        broadcastState();
-      }
-    });
-
     // Admin calibrate coordinates
     socket.on("admin:calibrate_cell", (raw: unknown) => {
       if (!isAdmin) return;
@@ -4235,46 +3937,6 @@ async function start() {
         saveState();
         broadcastState();
       }
-    });
-
-    // Admin directly grants a cyber-gear item (Shield, Loaded Dice or Magnet) to a player
-    socket.on("admin:grant_item", (pId: string, item: "shield" | "loaded_dice" | "magnet") => {
-      if (!isAdmin) return;
-      if (item !== "shield" && item !== "loaded_dice" && item !== "magnet") return;
-      const needle = (pId || "").toLowerCase();
-      const player = gameState.players.find(
-        (p) => p.id === pId || p.name.toLowerCase() === needle
-      );
-      if (!player) return;
-
-      if (!Array.isArray(player.inventory)) {
-        player.inventory = [];
-      }
-      player.inventory.push(item);
-
-      const itemName =
-        item === "shield"
-          ? "Щит «Файрвол» 🛡️"
-          : item === "loaded_dice"
-            ? "«Заряженный кубик» 🎲"
-            : "«Неоновый магнит» 🧲";
-      addLog({
-        id: "grant_" + Date.now(),
-        message: `🛠️ Администратор выдал девайс [${itemName}] игроку ${shownName(player)}!`,
-        timestamp: new Date().toLocaleTimeString(),
-        type: "admin",
-      });
-
-      if (player.telegramId || player.name) {
-        void sendTelegramMessage(
-          player.telegramId || player.name,
-          `🎁 <b>Подарок от администратора Hapstore!</b>\nВам начислен кибер-девайс: <b>${itemName}</b>.\n` +
-            `Активируйте его перед броском на игровом поле!`
-        );
-      }
-
-      saveState();
-      broadcastState();
     });
 
     /*

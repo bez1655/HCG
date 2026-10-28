@@ -53,8 +53,6 @@ interface AdminConsoleProps {
   onApprovePlayerTurn?: (pId: string, confirmBonus?: boolean, turns?: number) => void;
   onRejectPlayerTurn?: (pId: string) => void;
   onConsumeBonus?: (pId: string) => void;
-  /** Выдать кибер-девайс (+1 Щит, +1 Кубик или +1 Магнит) игроку */
-  onGrantItem?: (pId: string, item: "shield" | "loaded_dice" | "magnet") => void;
   onClose: () => void;
 }
 
@@ -119,7 +117,6 @@ export default function AdminConsole({
   onApprovePlayerTurn,
   onRejectPlayerTurn,
   onConsumeBonus,
-  onGrantItem,
   onClose,
 }: AdminConsoleProps) {
   // Manual Registration State
@@ -880,9 +877,6 @@ export default function AdminConsole({
                       Бонус (Приз)
                     </th>
                     <th className="p-4 font-mono text-[10px] uppercase tracking-wider text-[#e0e0e6]/60">
-                      Инвентарь
-                    </th>
-                    <th className="p-4 font-mono text-[10px] uppercase tracking-wider text-[#e0e0e6]/60">
                       Статус
                     </th>
                     <th className="p-4 font-mono text-[10px] uppercase tracking-wider text-[#e0e0e6]/60">
@@ -1001,66 +995,6 @@ export default function AdminConsole({
                             ) : (
                               <span className="text-[10px] text-[#e0e0e6]/30 font-mono">Нет</span>
                             )}
-                          </td>
-                          {/* Inventory & Quick Grants */}
-                          <td className="p-4">
-                            <div className="flex flex-col gap-1.5 font-mono items-start">
-                              <div className="flex items-center gap-1.5 text-[10px]">
-                                <span
-                                  className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1"
-                                  title="Щит «Файрвол» (защищает от отката назад на ловушках)"
-                                >
-                                  🛡️ {p.inventory?.filter((i) => i === "shield").length || 0}
-                                </span>
-                                <span
-                                  className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center gap-1"
-                                  title="«Заряженный кубик» (гарантирует выпадение 6)"
-                                >
-                                  🎲 {p.inventory?.filter((i) => i === "loaded_dice").length || 0}
-                                </span>
-                                <span
-                                  className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center gap-1"
-                                  title="«Неоновый магнит» (притягивает к призовым клеткам в 1 шаге)"
-                                >
-                                  🧲 {p.inventory?.filter((i) => i === "magnet").length || 0}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1 whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    playSound("click");
-                                    onGrantItem?.(p.id, "shield");
-                                  }}
-                                  className="btn py-0.5 px-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded text-[9px] cursor-pointer transition flex items-center gap-0.5 font-mono"
-                                  title="Выдать +1 Щит «Файрвол» игроку"
-                                >
-                                  +1 🛡️ Щит
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    playSound("click");
-                                    onGrantItem?.(p.id, "loaded_dice");
-                                  }}
-                                  className="btn py-0.5 px-1.5 bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 border border-purple-500/30 rounded text-[9px] cursor-pointer transition flex items-center gap-0.5 font-mono"
-                                  title="Выдать +1 «Заряженный кубик» игроку"
-                                >
-                                  +1 🎲 Кубик
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    playSound("click");
-                                    onGrantItem?.(p.id, "magnet");
-                                  }}
-                                  className="btn py-0.5 px-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/30 rounded text-[9px] cursor-pointer transition flex items-center gap-0.5 font-mono"
-                                  title="Выдать +1 «Неоновый магнит» игроку"
-                                >
-                                  +1 🧲 Магнит
-                                </button>
-                              </div>
-                            </div>
                           </td>
                           {/* Status */}
                           <td className="p-4">
@@ -1200,7 +1134,7 @@ export default function AdminConsole({
                   {gameState.players.filter((p) => p.role === "player").length === 0 && (
                     <tr>
                       <td
-                        colSpan={10}
+                        colSpan={8}
                         className="text-center py-8 text-[#e0e0e6]/40 font-mono italic"
                       >
                         Зарегистрированных участников нет. Используйте панель слева для создания.

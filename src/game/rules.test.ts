@@ -8,9 +8,6 @@ import {
   turnsLeft,
   isMilestone,
   FINAL_CELL,
-  isDropBoxCell,
-  generateDropBoxOptions,
-  DROP_BOX_CELL_IDS,
 } from "./rules";
 
 /** Minimal board: plain cells plus the specific ones each test needs. */
@@ -270,59 +267,3 @@ describe("isMilestone", () => {
     expect(isMilestone(0)).toBe(false);
   });
 });
-
-describe("Cyber-Drop & Drop Boxes", () => {
-  it("identifies all designated drop box cells", () => {
-    expect(DROP_BOX_CELL_IDS).toEqual([12, 28, 42, 53]);
-    for (const cellId of DROP_BOX_CELL_IDS) {
-      expect(isDropBoxCell(cellId)).toBe(true);
-    }
-    expect(isDropBoxCell(0)).toBe(false);
-    expect(isDropBoxCell(1)).toBe(false);
-    expect(isDropBoxCell(64)).toBe(false);
-  });
-
-  it("generates exactly 3 distinct drop box options", () => {
-    const options = generateDropBoxOptions();
-    expect(options).toHaveLength(3);
-    for (const opt of options) {
-      expect(opt.title).toBeTruthy();
-      expect(opt.type).toMatch(/^(jump|promo|item|penalty)$/);
-      expect(opt.description).toBeTruthy();
-    }
-  });
-
-  it("marks isDropBox in resolveMove when landing on a drop box cell", () => {
-    const board = makeBoard();
-    const r = resolveMove(player(10), 2, board); // lands on 12
-    expect(r.landedCell).toBe(12);
-    expect(r.isDropBox).toBe(true);
-  });
-});
-
-describe("Cyber-Devices — Shield (Файрвол)", () => {
-  it("absorbs penalty rollback when shield is active", () => {
-    const board = makeBoard({ 15: { type: CellType.PENALTY, value: -3, extra: "-3 КЛ." } });
-    // Without shield: rolls back to 12
-    const withoutShield = resolveMove(player(10), 5, board);
-    expect(withoutShield.landedCell).toBe(15);
-    expect(withoutShield.finalCell).toBe(12);
-    expect(withoutShield.shieldBlocked).toBe(false);
-
-    // With shield: penalty is absorbed, final cell remains 15
-    const withShield = resolveMove(player(10), 5, board, { shieldActive: true });
-    expect(withShield.landedCell).toBe(15);
-    expect(withShield.finalCell).toBe(15);
-    expect(withShield.shieldBlocked).toBe(true);
-    expect(withShield.effectText).toContain("ФАЙРВОЛ ПОГЛОТИЛ");
-  });
-
-  it("absorbs heavy snake trap rollback when shield is active", () => {
-    const board = makeBoard({ 40: { type: CellType.SNAKE, value: -10, extra: "-10 КЛ." } });
-    const withShield = resolveMove(player(35), 5, board, { shieldActive: true });
-    expect(withShield.landedCell).toBe(40);
-    expect(withShield.finalCell).toBe(40);
-    expect(withShield.shieldBlocked).toBe(true);
-  });
-});
-

@@ -24,7 +24,6 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { playSound } from "../utils/sounds";
-import { hapticImpact, hapticNotification } from "../utils/haptics";
 
 interface DiceRollProps {
   /** Face decided by the server. The client never picks it. */
@@ -173,19 +172,10 @@ export default function DiceRoll({ result, onDone }: DiceRollProps) {
     };
 
     safePlay("roll");
-    hapticImpact("rigid");
-
-    // Ритмичная тактильная пульсация в руке во время вращения кубика
-    const spinHapticInterval = setInterval(() => {
-      hapticImpact("light");
-    }, 320);
 
     const toLanded = setTimeout(() => {
-      clearInterval(spinHapticInterval);
       setLanded(true);
       safePlay("success");
-      hapticImpact("heavy");
-      hapticNotification("success");
     }, SPIN_MS);
 
     const toDone = setTimeout(() => {
@@ -195,7 +185,6 @@ export default function DiceRoll({ result, onDone }: DiceRollProps) {
     }, SPIN_MS + HOLD_MS);
 
     return () => {
-      clearInterval(spinHapticInterval);
       clearTimeout(toLanded);
       clearTimeout(toDone);
       // Unmounted before finishing — tell the parent anyway, or it would sit

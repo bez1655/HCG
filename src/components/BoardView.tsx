@@ -30,7 +30,6 @@ import {
   HelpCircle,
   Shield,
   Clock,
-  Zap,
 } from "lucide-react";
 import HelpScreen from "./HelpScreen";
 import CellComponent from "./CellComponent";
@@ -43,16 +42,14 @@ import PlayerAchievementBadges from "./PlayerAchievementBadges";
 import CellParticleEffect, { CellBurst } from "./CellParticleEffect";
 import ActiveTurnIndicator from "./ActiveTurnIndicator";
 import StatsSidebar from "./StatsSidebar";
-import { turnsLeft, pluralizeTurns, DROP_BOX_CELL_IDS } from "../game/rules";
+import { turnsLeft, pluralizeTurns } from "../game/rules";
 import { isTokenVisible } from "../game/presence";
 import { describeEffect } from "../game/cellGuide";
 import PlayerCabinet from "./PlayerCabinet";
-import InventoryBar from "./InventoryBar";
-import { hapticImpact, hapticNotification, hapticSelection } from "../utils/haptics";
 
 interface BoardViewProps {
   gameState: GameState;
-  onRoll: (item?: "shield" | "loaded_dice" | "magnet") => void;
+  onRoll: () => void;
   /** Dice value pushed by the server for this client, or null when idle. */
   pendingRoll: number | null;
   /** Clears pendingRoll once the animation has been consumed. */
@@ -70,7 +67,6 @@ interface BoardViewProps {
   onApprovePlayerTurn?: (pId: string, confirmBonus?: boolean, turns?: number) => void;
   onRejectPlayerTurn?: (pId: string) => void;
   onConsumeBonus?: (pId: string) => void;
-  onUpdateSkin?: (chipImage: string, color: string) => void;
 }
 
 export default function BoardView({
@@ -90,7 +86,6 @@ export default function BoardView({
   onApprovePlayerTurn,
   onRejectPlayerTurn,
   onConsumeBonus,
-  onUpdateSkin,
 }: BoardViewProps) {
   const [activeChatTab, setActiveChatTab] = useState<"chat" | "logs">("chat");
   const [chatInput, setChatInput] = useState("");
@@ -130,8 +125,6 @@ export default function BoardView({
   const [requestedTurns, setRequestedTurns] = useState(1);
   // Сколько ходов админ выдаёт игроку прямо с доски (по id игрока).
   const [grantTurns, setGrantTurns] = useState<Record<string, number>>({});
-  // Выбранный кибер-предмет из инвентаря для следующего броска ("shield" | "loaded_dice" | "magnet")
-  const [selectedItem, setSelectedItem] = useState<"shield" | "loaded_dice" | "magnet" | null>(null);
 
   // Drawer states
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -149,13 +142,6 @@ export default function BoardView({
   const [musicVol, setMusicVol] = useState(getMusicVolume());
   const [musicOn, setMusicOn] = useState(getMusicEnabled());
   const [soundOn, setSoundOn] = useState(getSoundEnabled());
-  const [ecoMode, setEcoMode] = useState(() => {
-    try {
-      return localStorage.getItem("hcg_eco_mode") === "true";
-    } catch {
-      return false;
-    }
-  });
 
   useEffect(() => {
     const handleSoundChange = () => setSoundOn(getSoundEnabled());
@@ -372,13 +358,9 @@ export default function BoardView({
       });
       return;
     }
-    console.info(
-      "[HCG] Отправляю roll:request",
-      selectedItem ? `с предметом ${selectedItem}` : "без предметов"
-    );
+    console.info("[HCG] Отправляю roll:request");
     setRolledNumber(null);
-    onRoll(selectedItem || undefined);
-    setSelectedItem(null);
+    onRoll();
   };
 
   // Start the 3D animation as soon as the server result arrives.
@@ -482,13 +464,19 @@ export default function BoardView({
       id="app-shell"
       className="relative h-[100dvh] w-full bg-black text-ink-core font-sans overflow-hidden select-none flex items-center justify-center"
     >
-      {/* Immersive Ambient Background: Static blurred image instead of heavy video decoder */}
+      {/* Immersive Full-Screen Video/Image Background */}
       <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        <img
-          src="/BoardHAP.png?v=10"
-          alt=""
-          aria-hidden="true"
-          className="w-full h-full object-cover opacity-35 brightness-90 blur-[3px]"
+        <video
+          src="/BoardHAP.mp4?v=10"
+          autoPlay
+          loop
+          muted
+          playsInline
+          poster="/BoardHAP.png?v=10"
+          className="w-full h-full object-cover opacity-40 brightness-100 blur-[2px]"
+          onError={(_e) => {
+            console.error("App background video load error");
+          }}
         />
       </div>
 
@@ -533,7 +521,6 @@ export default function BoardView({
           <button
             onClick={() => {
               playSound("click");
-              hapticSelection();
               setIsMenuOpen(!isMenuOpen);
             }}
             className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-[10px] font-black transition duration-200 cursor-pointer font-mono tracking-wider shadow-lg ${
@@ -1116,26 +1103,17 @@ export default function BoardView({
           onClick={handleBoardClick}
           className="board-container relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black shadow-[0_0_80px_rgba(0,0,0,0.9)] flex-shrink-0"
         >
-          {/* Background Map: Video with GPU acceleration or Static Image in Eco Mode */}
-          {ecoMode ? (
-            <img
-              src="/BoardHAP.png?v=10"
-              alt="Игровое поле"
-              className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
-            />
-          ) : (
-            <video
-              ref={boardVideoRef}
-              src="/BoardHAP.mp4?v=10"
-              autoPlay
-              loop
-              muted
-              playsInline
-              poster="/BoardHAP.png?v=10"
-              style={{ transform: "translateZ(0)", willChange: "transform" }}
-              className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
-            />
-          )}
+          {/* Background Map video */}
+          <video
+            ref={boardVideoRef}
+            src="/BoardHAP.mp4?v=10"
+            autoPlay
+            loop
+            muted
+            playsInline
+            poster="/BoardHAP.png?v=10"
+            className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
+          />
 
           {/* SEC_BOARD coordinate decorative text */}
           <div className="absolute bottom-3 right-3 font-mono text-[8px] opacity-40 uppercase tracking-widest text-white pointer-events-none z-20">
@@ -1193,7 +1171,6 @@ export default function BoardView({
                 isDraggable={isDraggable}
                 getCellColor={getCellColor}
                 calibrationMode={isCalibrationActive}
-                isDropBox={DROP_BOX_CELL_IDS.includes(cell.id)}
                 onClick={() => {
                   playSound("click");
                   triggerCellBurst(cell.id);
@@ -1289,12 +1266,7 @@ export default function BoardView({
                   }}
                 >
                   <div className="relative -translate-x-1/2 -translate-y-1/2">
-                    <PlayerToken
-                      player={player}
-                      pIdx={pIdx}
-                      isActionCell={isActionCell}
-                      isMe={player.id === me?.id}
-                    />
+                    <PlayerToken player={player} pIdx={pIdx} isActionCell={isActionCell} />
                   </div>
                 </motion.div>
               );
@@ -1325,20 +1297,12 @@ export default function BoardView({
             </div>
           )}
 
-          {/* 2. Bottom-Left Corner: Inventory Bar & Compact Dice Roll Button */}
+          {/* 2. Bottom-Left Corner: Compact Dice Roll Button with /Dice.png?v=3 */}
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-40 pointer-events-auto flex flex-col items-center gap-2"
+            className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-40 pointer-events-auto flex flex-col items-center"
           >
-            {/* Quick Cyber-Inventory Bar */}
-            <InventoryBar
-              inventory={me?.inventory}
-              activeItem={selectedItem}
-              onToggleItem={(item) => setSelectedItem((prev) => (prev === item ? null : item))}
-              disabled={isRolling || !isMyTurn || gameState.turnStatus !== "waiting_roll"}
-            />
-
             <button
               onClick={() => {
                 if (!isMyTurn || gameState.turnStatus !== "waiting_roll" || isRolling) {
@@ -1355,10 +1319,10 @@ export default function BoardView({
                     })
                   );
                   playSound("click");
-                  hapticNotification("warning");
                   return;
                 }
-                hapticImpact("heavy");
+                const tg = (window as any).Telegram?.WebApp;
+                if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("heavy");
                 handleRoll();
               }}
               disabled={isRolling}
@@ -1656,47 +1620,6 @@ export default function BoardView({
                     </>
                   )}
                 </div>
-
-                {/* Eco Mode / Background Video Toggle */}
-                <div className="space-y-3 pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <Zap size={16} className="text-amber-400" />
-                      <div>
-                        <span className="text-xs font-bold text-white block uppercase tracking-wide">
-                          ЭКО-РЕЖИМ (ФОН)
-                        </span>
-                        <span className="text-[9px] text-gray-500 block font-mono">
-                          {ecoMode ? "СТАТИЧНЫЙ ФОН (БЕЗ ЛАГОВ 60 FPS)" : "ЖИВОЙ АНИМИРОВАННЫЙ ВИДЕОФОН"}
-                        </span>
-                      </div>
-                    </div>
-                    {/* Toggle Switch */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playSound("click");
-                        const nextState = !ecoMode;
-                        setEcoMode(nextState);
-                        try {
-                          localStorage.setItem("hcg_eco_mode", String(nextState));
-                        } catch {}
-                      }}
-                      className={`relative w-11 h-6 rounded-full p-1 transition-colors duration-300 cursor-pointer ${
-                        ecoMode
-                          ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
-                          : "bg-gray-800"
-                      }`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 ${ecoMode ? "translate-x-5" : "translate-x-0"}`}
-                      />
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-gray-400 leading-relaxed font-sans pl-6">
-                    Включите, если анимация поля подтормаживает или греется телефон. Видео заменится на сверхлегкую чёткую картинку.
-                  </p>
-                </div>
               </div>
 
               {/* Footer */}
@@ -1735,7 +1658,6 @@ export default function BoardView({
                   key={n}
                   onClick={() => {
                     playSound("click");
-                    hapticSelection();
                     setRequestedTurns(n);
                   }}
                   className={`py-2 rounded-lg font-mono font-black text-sm border transition cursor-pointer ${
@@ -1751,10 +1673,7 @@ export default function BoardView({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  hapticSelection();
-                  setRequestedTurns((v) => Math.max(1, v - 1));
-                }}
+                onClick={() => setRequestedTurns((v) => Math.max(1, v - 1))}
                 className="w-9 h-9 rounded-lg bg-white/5 border border-white/15 text-white font-mono text-base cursor-pointer hover:bg-white/10"
               >
                 −
@@ -1764,10 +1683,7 @@ export default function BoardView({
                 {pluralizeTurns(requestedTurns)}
               </div>
               <button
-                onClick={() => {
-                  hapticSelection();
-                  setRequestedTurns((v) => Math.min(10, v + 1));
-                }}
+                onClick={() => setRequestedTurns((v) => Math.min(10, v + 1))}
                 className="w-9 h-9 rounded-lg bg-white/5 border border-white/15 text-white font-mono text-base cursor-pointer hover:bg-white/10"
               >
                 +
@@ -1778,7 +1694,6 @@ export default function BoardView({
               type="button"
               onClick={() => {
                 playSound("success");
-                hapticNotification("success");
                 onSendTurnRequest?.(requestedTurns);
                 setIsTurnRequestOpen(false);
               }}
@@ -1877,7 +1792,6 @@ export default function BoardView({
           gameState={gameState}
           prizes={me?.prizeLog || []}
           onClose={() => setIsCabinetOpen(false)}
-          onUpdateSkin={onUpdateSkin}
         />
       )}
     </div>

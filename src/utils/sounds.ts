@@ -1,5 +1,4 @@
 // Cyberpunk Web Audio API Sound Synthesizer
-import { hapticImpact, hapticNotification } from "./haptics";
 let audioCtx: AudioContext | null = null;
 
 function safeNum(val: any, fallback: number = 0): number {
@@ -203,25 +202,18 @@ export function playSound(
     | "bonus"
     | "win"
 ) {
-  // Тактильная отдача всегда активна на телефоне, даже если игрок выключил звук
-  try {
-    if (type === "click" || type === "laser") hapticImpact("light");
-    else if (type === "roll") hapticImpact("rigid");
-    else if (type === "teleport") hapticImpact("medium");
-    else if (type === "bonus" || type === "level_up" || type === "success") hapticNotification("success");
-    else if (type === "win") {
-      hapticNotification("success");
-      hapticImpact("heavy");
-    } else if (type === "danger" || type === "error") {
-      hapticNotification("error");
-    }
-  } catch {
-    /* haptics best-effort */
-  }
-
   if (soundVolume <= 0 || !isSoundEnabled) return; // Muted
 
   try {
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg && tg.HapticFeedback) {
+      if (type === "click" || type === "laser") tg.HapticFeedback.impactOccurred("light");
+      if (type === "roll") tg.HapticFeedback.impactOccurred("rigid");
+      if (type === "success" || type === "level_up")
+        tg.HapticFeedback.notificationOccurred("success");
+      if (type === "error") tg.HapticFeedback.notificationOccurred("error");
+    }
+
     const ctx = getAudioContext();
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});

@@ -12,7 +12,6 @@ interface CellComponentProps {
   onClick: () => void;
   onDragEnd: (event: any, info: any) => void;
   calibrationMode: boolean;
-  isDropBox?: boolean;
 }
 
 // Determine icon or symbol based on CellType
@@ -67,7 +66,6 @@ const CellComponent = React.memo(
     onClick,
     onDragEnd,
     calibrationMode,
-    isDropBox = false,
   }: CellComponentProps) => {
     return (
       <motion.div
@@ -121,18 +119,6 @@ const CellComponent = React.memo(
             transition={{ repeat: Infinity, duration: 1.5 }}
           >
             {cell.id}
-          </motion.div>
-        )}
-
-        {/* DropBox Crate Beacon Badge */}
-        {isDropBox && !calibrationMode && (
-          <motion.div
-            className="absolute -top-3.5 -right-2 text-[11px] pointer-events-none drop-shadow-[0_0_8px_rgba(255,215,0,0.9)] select-none z-30"
-            animate={{ y: [0, -3, 0], scale: [1, 1.15, 1] }}
-            transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-            title="Кибер-дроп!"
-          >
-            📦
           </motion.div>
         )}
 

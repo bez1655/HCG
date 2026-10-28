@@ -30,8 +30,6 @@ export interface PrizeRecord {
   redeemedAt?: number;
 }
 
-export type CyberItem = "shield" | "loaded_dice" | "magnet";
-
 export interface Player {
   id: string;
   /**
@@ -101,28 +99,6 @@ export interface Player {
   prizeLog?: PrizeRecord[];
   /** Last “you still have a roll” reminder. */
   lastTurnReminderAt?: number;
-  /** Player inventory of consumable cyber-devices (shield, loaded_dice, magnet). */
-  inventory?: string[];
-  /** Стрик успешных ходов без попадания на ловушки. */
-  streak?: number;
-  /** Активирован ли режим Fever Mode (при streak >= 3). */
-  feverMode?: boolean;
-  /** Active drop box session awaiting player's choice */
-  pendingDropBox?: DropBoxSession | null;
-}
-
-export interface DropBoxOption {
-  title: string;
-  description: string;
-  type: "jump" | "promo" | "item" | "penalty";
-  value?: number;
-  promoCode?: string;
-  item?: CyberItem;
-}
-
-export interface DropBoxSession {
-  cellId: number;
-  options: DropBoxOption[];
 }
 
 export interface Cell {

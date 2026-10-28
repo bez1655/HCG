@@ -10,7 +10,6 @@
  */
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { hapticImpact, hapticNotification } from "../utils/haptics";
 
 export interface TurnOutcome {
   title: string;
@@ -52,9 +51,12 @@ export default function TurnOutcomeCard({ outcome, onClose }: Props) {
   // Отклик телефона: приятный при удаче, предупреждающий при откате.
   React.useEffect(() => {
     if (!outcome) return;
-    if (outcome.tone === "good") hapticNotification("success");
-    else if (outcome.tone === "bad") hapticNotification("error");
-    else hapticImpact("light");
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg?.HapticFeedback) {
+      if (outcome.tone === "good") tg.HapticFeedback.notificationOccurred("success");
+      else if (outcome.tone === "bad") tg.HapticFeedback.notificationOccurred("error");
+      else tg.HapticFeedback.impactOccurred("light");
+    }
   }, [outcome]);
 
   // Закрытие по Escape — на случай игры с клавиатуры.
