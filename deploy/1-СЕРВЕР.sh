@@ -22,7 +22,7 @@ G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; C=$'\e[36m'; B=$'\e[1m'; N=$'\e[0m'
 ok()   { echo "  ${G}✓${N} $*"; }
 bad()  { echo "  ${R}✗${N} $*"; }
 warn() { echo "  ${Y}!${N} $*"; }
-hdr()  { echo; echo "${B}${C}▸ $*${N}"; }
+hdr()  { echo; echo "${B}${C}▸ $*${N}  ${Y}$(date +%H:%M:%S)${N}"; }
 die()  { echo; echo "${R}${B}ОСТАНОВЛЕНО: $*${N}"; echo; exit 1; }
 
 TARGET="${HCG_DIR:-/var/www/hcg}"
@@ -200,8 +200,14 @@ fi
 hdr "5/7  Сборка образов (2–5 минут)"
 # ---------------------------------------------------------------------------
 # --no-cache обязателен: Docker уже подсовывал старый слой.
-echo "  Идёт сборка, это долго. Не прерывайте."
-if docker compose build --no-cache >/tmp/hcg-build.log 2>&1; then
+echo "  Идёт сборка. Ниже — живой лог Docker. Не прерывайте."
+echo "  ────────────────────────────────────────────────"
+set +o pipefail
+docker compose build --no-cache --progress=plain 2>&1 | tee /tmp/hcg-build.log | sed 's/^/     /'
+BUILD_RC=${PIPESTATUS[0]}
+set -o pipefail
+echo "  ────────────────────────────────────────────────"
+if [ "$BUILD_RC" = 0 ]; then
   ok "образы собраны"
 else
   bad "сборка не удалась. Последние строки:"
@@ -213,20 +219,25 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-hdr "6/7  Запуск"
+hdr "6/7  Запуск контейнеров"
 # ---------------------------------------------------------------------------
-docker compose up -d --remove-orphans >/tmp/hcg-up.log 2>&1 \
+echo "  docker compose up -d ..."
+docker compose up -d --remove-orphans 2>&1 | tee /tmp/hcg-up.log | sed 's/^/     /' \
   || { tail -15 /tmp/hcg-up.log | sed 's/^/      /'; die "не удалось запустить"; }
 ok "контейнеры запущены"
 
-echo "  Жду готовности сервера..."
+echo "  Жду /healthz (до ~80 секунд)..."
 READY=0
 for i in $(seq 1 40); do
+  printf "     попытка %s/40 ...\r" "$i"
   if curl -sf --max-time 3 http://127.0.0.1:3001/healthz >/dev/null 2>&1; then
-    READY=1; break
+    READY=1
+    echo
+    break
   fi
   sleep 2
 done
+echo
 [ "$READY" = 1 ] && ok "сервер отвечает" || warn "сервер не ответил за 80 с — проверьте логи"
 
 # ---------------------------------------------------------------------------

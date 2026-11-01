@@ -30,26 +30,28 @@ import {
   HelpCircle,
   Shield,
   Clock,
+  Zap,
 } from "lucide-react";
 import HelpScreen from "./HelpScreen";
 import CellComponent from "./CellComponent";
 import DiceRoll from "./DiceRoll";
 import PlayerToken from "./PlayerToken";
 import PlayerStatusBadge from "./PlayerStatusBadge";
-import CyberParticles from "./CyberParticles";
 import PlayerAvatarWithBadges from "./PlayerAvatarWithBadges";
 import PlayerAchievementBadges from "./PlayerAchievementBadges";
 import CellParticleEffect, { CellBurst } from "./CellParticleEffect";
 import ActiveTurnIndicator from "./ActiveTurnIndicator";
 import StatsSidebar from "./StatsSidebar";
-import { turnsLeft, pluralizeTurns } from "../game/rules";
+import { turnsLeft, pluralizeTurns, DROP_BOX_CELL_IDS } from "../game/rules";
 import { isTokenVisible } from "../game/presence";
 import { describeEffect } from "../game/cellGuide";
 import PlayerCabinet from "./PlayerCabinet";
+import InventoryBar from "./InventoryBar";
+import { hapticImpact, hapticNotification, hapticSelection } from "../utils/haptics";
 
 interface BoardViewProps {
   gameState: GameState;
-  onRoll: () => void;
+  onRoll: (item?: "shield" | "loaded_dice" | "magnet") => void;
   /** Dice value pushed by the server for this client, or null when idle. */
   pendingRoll: number | null;
   /** Clears pendingRoll once the animation has been consumed. */
@@ -67,6 +69,7 @@ interface BoardViewProps {
   onApprovePlayerTurn?: (pId: string, confirmBonus?: boolean, turns?: number) => void;
   onRejectPlayerTurn?: (pId: string) => void;
   onConsumeBonus?: (pId: string) => void;
+  onUpdateSkin?: (chipImage: string, color: string) => void;
 }
 
 export default function BoardView({
@@ -86,6 +89,7 @@ export default function BoardView({
   onApprovePlayerTurn,
   onRejectPlayerTurn,
   onConsumeBonus,
+  onUpdateSkin,
 }: BoardViewProps) {
   const [activeChatTab, setActiveChatTab] = useState<"chat" | "logs">("chat");
   const [chatInput, setChatInput] = useState("");
@@ -125,6 +129,8 @@ export default function BoardView({
   const [requestedTurns, setRequestedTurns] = useState(1);
   // Сколько ходов админ выдаёт игроку прямо с доски (по id игрока).
   const [grantTurns, setGrantTurns] = useState<Record<string, number>>({});
+  // Выбранный кибер-предмет из инвентаря для следующего броска ("shield" | "loaded_dice" | "magnet")
+  const [selectedItem, setSelectedItem] = useState<"shield" | "loaded_dice" | "magnet" | null>(null);
 
   // Drawer states
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -142,6 +148,17 @@ export default function BoardView({
   const [musicVol, setMusicVol] = useState(getMusicVolume());
   const [musicOn, setMusicOn] = useState(getMusicEnabled());
   const [soundOn, setSoundOn] = useState(getSoundEnabled());
+  const [ecoMode, setEcoMode] = useState(() => {
+    try {
+      // Video loop is opt-in. Default ON eco (still PNG) — looping mp4
+      // in Telegram WebView is what made the board unusable.
+      const saved = localStorage.getItem("hcg_eco_mode");
+      if (saved === "true") return true;
+      return false;
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     const handleSoundChange = () => setSoundOn(getSoundEnabled());
@@ -241,41 +258,7 @@ export default function BoardView({
 
   useEffect(() => {
     if (!gameState) return;
-
-    const timer = setInterval(() => {
-      setVisualCells((prev) => {
-        let updated = false;
-        const next = { ...prev };
-
-        for (const player of gameState.players) {
-          if (player.role !== "player") continue;
-          const currentVisual = prev[player.id] !== undefined ? prev[player.id] : player.cell;
-          const target = player.cell;
-
-          if (currentVisual !== target) {
-            const nextCellId = currentVisual < target ? currentVisual + 1 : currentVisual - 1;
-            next[player.id] = nextCellId;
-            updated = true;
-            playSound("click");
-            triggerCellBurst(nextCellId, player.color);
-          }
-        }
-
-        return updated ? next : prev;
-      });
-    }, 350);
-
-    const wake = () => {
-      if (document.visibilityState === "visible") snapVisualToServer();
-    };
-    document.addEventListener("visibilitychange", wake);
-    window.addEventListener("focus", wake);
-
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", wake);
-      window.removeEventListener("focus", wake);
-    };
+    snapVisualToServer();
   }, [gameState?.players]);
 
   // Auto-clear rolled number after 5 seconds
@@ -350,17 +333,25 @@ export default function BoardView({
   // Ask the server for a roll; the dice animation starts when the server
   // answers with its authoritative result (see the effect below).
   const handleRoll = () => {
-    if (isRolling || !isMyTurn || gameState.turnStatus !== "waiting_roll") {
+    // Only the player's remaining approved rolls matter. The global
+    // turnStatus flag has historically stayed "idle" after an approval
+    // and made the dice look dead while the player still had turns.
+    if (isRolling || !isMyTurn) {
       console.warn("[HCG] handleRoll: условия не выполнены", {
         isRolling,
         isMyTurn,
         turnStatus: gameState.turnStatus,
+        turnsLeft: myTurnsLeft,
       });
       return;
     }
-    console.info("[HCG] Отправляю roll:request");
+    console.info(
+      "[HCG] Отправляю roll:request",
+      selectedItem ? `с предметом ${selectedItem}` : "без предметов"
+    );
     setRolledNumber(null);
-    onRoll();
+    onRoll(selectedItem || undefined);
+    setSelectedItem(null);
   };
 
   // Start the 3D animation as soon as the server result arrives.
@@ -415,15 +406,29 @@ export default function BoardView({
   useEffect(() => {
     const video = boardVideoRef.current;
     if (!video) return;
-    if (isRolling) {
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (isRolling || ecoMode || hidden) {
       video.pause();
-    } else {
-      // Старые WebView возвращают из play() undefined, а не промис: цепочка
-      // .catch() там падает и уносит весь экран доски. Проверяем результат.
+      return;
+    }
+    const started = video.play() as Promise<void> | undefined;
+    if (started && typeof started.catch === "function") started.catch(() => undefined);
+  }, [isRolling, ecoMode]);
+
+  useEffect(() => {
+    const onVis = () => {
+      const video = boardVideoRef.current;
+      if (!video || ecoMode) return;
+      if (document.hidden || isRolling) {
+        video.pause();
+        return;
+      }
       const started = video.play() as Promise<void> | undefined;
       if (started && typeof started.catch === "function") started.catch(() => undefined);
-    }
-  }, [isRolling]);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [ecoMode, isRolling]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -464,27 +469,7 @@ export default function BoardView({
       id="app-shell"
       className="relative h-[100dvh] w-full bg-black text-ink-core font-sans overflow-hidden select-none flex items-center justify-center"
     >
-      {/* Immersive Full-Screen Video/Image Background */}
-      <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        <video
-          src="/BoardHAP.mp4?v=10"
-          autoPlay
-          loop
-          muted
-          playsInline
-          poster="/BoardHAP.png?v=10"
-          className="w-full h-full object-cover opacity-40 brightness-100 blur-[2px]"
-          onError={(_e) => {
-            console.error("App background video load error");
-          }}
-        />
-      </div>
-
-      {/* Decorative Grid Overlay for Matrix look */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(224,224,230,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(224,224,230,0.06)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none z-0" />
-
-      {/* Floating Cyber-Dust / Neon Embers Particles */}
-      <CyberParticles />
+      {/* Black shell: no second video, no CSS blur, no particle canvas. */}
 
       {/* Expandable Player Stats Sidebar */}
       <StatsSidebar
@@ -521,6 +506,7 @@ export default function BoardView({
           <button
             onClick={() => {
               playSound("click");
+              hapticSelection();
               setIsMenuOpen(!isMenuOpen);
             }}
             className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-[10px] font-black transition duration-200 cursor-pointer font-mono tracking-wider shadow-lg ${
@@ -1103,17 +1089,28 @@ export default function BoardView({
           onClick={handleBoardClick}
           className="board-container relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black shadow-[0_0_80px_rgba(0,0,0,0.9)] flex-shrink-0"
         >
-          {/* Background Map video */}
-          <video
-            ref={boardVideoRef}
-            src="/BoardHAP.mp4?v=10"
-            autoPlay
-            loop
-            muted
-            playsInline
-            poster="/BoardHAP.png?v=10"
-            className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
-          />
+          {/* Background Map: Video with GPU acceleration or Static Image in Eco Mode */}
+          {ecoMode ? (
+            <img
+              src="/BoardHAP.png?v=10"
+              alt="Игровое поле"
+              className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
+            />
+          ) : (
+            <video
+              ref={boardVideoRef}
+              src="/BoardHAP.mp4?v=10"
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="metadata"
+              poster="/BoardHAP.png?v=10"
+              disablePictureInPicture
+              disableRemotePlayback
+              className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 [transform:translateZ(0)]"
+            />
+          )}
 
           {/* SEC_BOARD coordinate decorative text */}
           <div className="absolute bottom-3 right-3 font-mono text-[8px] opacity-40 uppercase tracking-widest text-white pointer-events-none z-20">
@@ -1141,7 +1138,7 @@ export default function BoardView({
           )}
 
           {/* Cyber Particle Burst Overlay */}
-          <CellParticleEffect bursts={cellBursts} />
+          {/* Particle bursts disabled: they re-painted the board every hop and fought the video decoder. */}
 
           {/* Cells */}
           {gameState.cells.map((cell) => {
@@ -1171,6 +1168,7 @@ export default function BoardView({
                 isDraggable={isDraggable}
                 getCellColor={getCellColor}
                 calibrationMode={isCalibrationActive}
+                isDropBox={DROP_BOX_CELL_IDS.includes(cell.id)}
                 onClick={() => {
                   playSound("click");
                   triggerCellBurst(cell.id);
@@ -1247,28 +1245,23 @@ export default function BoardView({
                 cell.type === CellType.BITCOIN;
 
               return (
-                <motion.div
+                <div
                   key={player.id}
                   className="absolute z-30 pointer-events-none"
                   style={{
-                    left: `${cell.x}%`,
-                    top: `${cell.y}%`,
-                  }}
-                  animate={{
                     left: `${cell.x + offsetX}%`,
                     top: `${cell.y + offsetY}%`,
                   }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 90,
-                    damping: 15,
-                    mass: 0.9,
-                  }}
                 >
                   <div className="relative -translate-x-1/2 -translate-y-1/2">
-                    <PlayerToken player={player} pIdx={pIdx} isActionCell={isActionCell} />
+                    <PlayerToken
+                      player={player}
+                      pIdx={pIdx}
+                      isActionCell={isActionCell}
+                      isMe={player.id === me?.id}
+                    />
                   </div>
-                </motion.div>
+                </div>
               );
             })}
 
@@ -1297,15 +1290,21 @@ export default function BoardView({
             </div>
           )}
 
-          {/* 2. Bottom-Left Corner: Compact Dice Roll Button with /Dice.png?v=3 */}
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-40 pointer-events-auto flex flex-col items-center"
-          >
+          {/* 2. Bottom-Left Corner: Inventory Bar & Compact Dice Roll Button */}
+          <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-[80] pointer-events-auto flex flex-col items-center gap-2">
+            {/* Quick Cyber-Inventory Bar */}
+            <InventoryBar
+              inventory={me?.inventory}
+              activeItem={selectedItem}
+              onToggleItem={(item) => setSelectedItem((prev) => (prev === item ? null : item))}
+              disabled={isRolling || !isMyTurn}
+            />
+
             <button
-              onClick={() => {
-                if (!isMyTurn || gameState.turnStatus !== "waiting_roll" || isRolling) {
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!isMyTurn || isRolling) {
                   // Раньше отказ был полностью беззвучным: ни в интерфейсе,
                   // ни в консоли не оставалось следа, и «кнопка не работает»
                   // невозможно было отличить от «запрос ушёл и потерялся».
@@ -1319,29 +1318,27 @@ export default function BoardView({
                     })
                   );
                   playSound("click");
+                  hapticNotification("warning");
                   return;
                 }
-                const tg = (window as any).Telegram?.WebApp;
-                if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("heavy");
+                hapticImpact("heavy");
                 handleRoll();
               }}
               disabled={isRolling}
               className={`relative group flex flex-col items-center justify-center transition-all duration-300 ${
-                isMyTurn && gameState.turnStatus === "waiting_roll"
-                  ? "cursor-pointer hover:scale-105 active:scale-95"
-                  : "cursor-not-allowed opacity-75"
+                isMyTurn ? "cursor-pointer hover:scale-105 active:scale-95" : "cursor-not-allowed opacity-75"
               }`}
             >
               {/* Neon Aura Glow when active */}
-              {isMyTurn && gameState.turnStatus === "waiting_roll" && (
-                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#ff7a18] via-[#c45c0c] to-[#ffd36a] opacity-70 blur-md animate-pulse scale-110 pointer-events-none" />
+              {isMyTurn && (
+                <div className="absolute inset-0 rounded-full bg-[#ff7a18]/40 animate-pulse scale-110 pointer-events-none" />
               )}
 
               {/* Dice Graphic Box */}
               <div
                 className={`relative w-12 h-12 md:w-14 md:h-14 transition-all duration-300 flex items-center justify-center ${
-                  isMyTurn && gameState.turnStatus === "waiting_roll"
-                    ? "drop-shadow-[0_0_12px_rgba(255,0,0,0.8)] animate-pulse"
+                  isMyTurn
+                    ? "drop-shadow-[0_0_12px_rgba(255,122,24,0.8)]"
                     : "drop-shadow-[0_0_6px_rgba(255,255,255,0.2)] grayscale-[30%]"
                 }`}
               >
@@ -1358,8 +1355,8 @@ export default function BoardView({
               <div className="mt-0.5 text-center font-syne font-black uppercase tracking-wider text-[9px] md:text-[10px] leading-tight select-none">
                 <span
                   className={`${
-                    isMyTurn && gameState.turnStatus === "waiting_roll"
-                      ? "text-[#00ffaa] drop-shadow-[0_0_6px_rgba(0,255,170,0.9)] animate-pulse"
+                    isMyTurn
+                      ? "text-[#00ffaa] drop-shadow-[0_0_6px_rgba(0,255,170,0.9)]"
                       : "text-gray-300"
                   }`}
                 >
@@ -1371,9 +1368,14 @@ export default function BoardView({
                     ОСТАЛОСЬ {myTurnsLeft}
                   </span>
                 )}
+                {!isMyTurn && !isRolling && (
+                  <span className="block text-[8px] md:text-[9px] text-amber-300/90 font-mono">
+                    СНАЧАЛА ЗАПРОСИТЕ ХОД
+                  </span>
+                )}
               </div>
             </button>
-          </motion.div>
+          </div>
 
           {/*
             3. Правый нижний угол: остаток ходов.
@@ -1620,6 +1622,47 @@ export default function BoardView({
                     </>
                   )}
                 </div>
+
+                {/* Eco Mode / Background Video Toggle */}
+                <div className="space-y-3 pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Zap size={16} className="text-amber-400" />
+                      <div>
+                        <span className="text-xs font-bold text-white block uppercase tracking-wide">
+                          ЭКО-РЕЖИМ (ФОН)
+                        </span>
+                        <span className="text-[9px] text-gray-500 block font-mono">
+                          {ecoMode ? "СТАТИЧНЫЙ ФОН (БЕЗ ЛАГОВ 60 FPS)" : "ЖИВОЙ АНИМИРОВАННЫЙ ВИДЕОФОН"}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Toggle Switch */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playSound("click");
+                        const nextState = !ecoMode;
+                        setEcoMode(nextState);
+                        try {
+                          localStorage.setItem("hcg_eco_mode", String(nextState));
+                        } catch {}
+                      }}
+                      className={`relative w-11 h-6 rounded-full p-1 transition-colors duration-300 cursor-pointer ${
+                        ecoMode
+                          ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
+                          : "bg-gray-800"
+                      }`}
+                    >
+                      <div
+                        className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 ${ecoMode ? "translate-x-5" : "translate-x-0"}`}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 leading-relaxed font-sans pl-6">
+                    Включите, если анимация поля подтормаживает или греется телефон. Видео заменится на сверхлегкую чёткую картинку.
+                  </p>
+                </div>
               </div>
 
               {/* Footer */}
@@ -1658,6 +1701,7 @@ export default function BoardView({
                   key={n}
                   onClick={() => {
                     playSound("click");
+                    hapticSelection();
                     setRequestedTurns(n);
                   }}
                   className={`py-2 rounded-lg font-mono font-black text-sm border transition cursor-pointer ${
@@ -1673,7 +1717,10 @@ export default function BoardView({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setRequestedTurns((v) => Math.max(1, v - 1))}
+                onClick={() => {
+                  hapticSelection();
+                  setRequestedTurns((v) => Math.max(1, v - 1));
+                }}
                 className="w-9 h-9 rounded-lg bg-white/5 border border-white/15 text-white font-mono text-base cursor-pointer hover:bg-white/10"
               >
                 −
@@ -1683,7 +1730,10 @@ export default function BoardView({
                 {pluralizeTurns(requestedTurns)}
               </div>
               <button
-                onClick={() => setRequestedTurns((v) => Math.min(10, v + 1))}
+                onClick={() => {
+                  hapticSelection();
+                  setRequestedTurns((v) => Math.min(10, v + 1));
+                }}
                 className="w-9 h-9 rounded-lg bg-white/5 border border-white/15 text-white font-mono text-base cursor-pointer hover:bg-white/10"
               >
                 +
@@ -1694,6 +1744,7 @@ export default function BoardView({
               type="button"
               onClick={() => {
                 playSound("success");
+                hapticNotification("success");
                 onSendTurnRequest?.(requestedTurns);
                 setIsTurnRequestOpen(false);
               }}
@@ -1792,6 +1843,7 @@ export default function BoardView({
           gameState={gameState}
           prizes={me?.prizeLog || []}
           onClose={() => setIsCabinetOpen(false)}
+          onUpdateSkin={onUpdateSkin}
         />
       )}
     </div>
