@@ -16,6 +16,7 @@
 #      bash deploy/ВСЁ-НА-VPS.sh игрок hapalka228
 #      bash deploy/ВСЁ-НА-VPS.sh напрямую
 #      bash deploy/ВСЁ-НА-VPS.sh пересобрать
+#      bash deploy/ВСЁ-НА-VPS.sh очистка
 # =============================================================================
 
 set -uo pipefail
@@ -256,6 +257,10 @@ if [ $# -gt 0 ]; then
     игрок|player|diag)     step_player "${2:-hapalka228}" ;;
     напрямую|direct)       step_direct ;;
     пересобрать|rebuild)   step_rebuild ;;
+    очистка|clean)
+      progress 1 1 "очистка папки от старых инструкций"
+      bash "$HERE/ОЧИСТКА-ПАПКИ-HCG.sh" "$(work_dir)"
+      ;;
     все|всё|all)
       step_server || die "развёртывание не удалось — остальные шаги пропущены"
       step_github || warn "отправка в GitHub не удалась — продолжаю"

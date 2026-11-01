@@ -503,7 +503,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-10-28.4";
+const SERVER_BUILD = "2026-11-01.1";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -3366,16 +3366,26 @@ async function start() {
         report.awardedBonus = player.activeBonus;
         report.replacedBonus = previousBonus;
 
+        player.lapsCompleted = (player.lapsCompleted || 0) + 1;
+        pushPrize(player, {
+          name: "Ключ ядра",
+          extra: `КРУГ ${player.lapsCompleted}`,
+          description: "Полный проход поля. Можно начать новый круг, инвентарь сохранится.",
+          value: 0,
+          cellId: 64,
+          receivedAt: Date.now(),
+        });
+
         addLog({
           id: "win_" + Date.now(),
-          message: `🏆 КИБЕР-ПОБЕДИТЕЛЬ! ${shownName(player)} достигнул ЯДРО СИСТЕМЫ (клетка 64)! Получен приз: ${bonusName}!${hadOldBonus ? " (Предыдущий неиспользованный бонус заменен)" : ""}`,
+          message: `🏆 ЯДРО СЕТИ. ${shownName(player)} закрыл круг ${player.lapsCompleted}. Приз: ${bonusName}. Можно начать новый круг — фишка на старт, девайсы остаются.`,
           timestamp: new Date().toLocaleTimeString(),
           type: "system",
         });
 
         io.emit("event:trigger", {
-          title: "🏆 КИБЕР-ПОБЕДА!",
-          description: `Невероятно! ${player.name} успешно преодолел все ловушки, завершил круг и заслужил главный приз: МЕГА-КРИСТАЛЛ! Хотите запустить новый цикл взлома и начать заново круг?`,
+          title: "ЯДРО СЕТИ",
+          description: `${shownName(player)} прошёл поле (круг ${player.lapsCompleted}). Главный приз в кабинете. Новый круг: фишка на клетку 0, щиты и кубики остаются.`,
           playerName: shownName(player),
           type: "win",
           playerId: player.id,
@@ -3595,6 +3605,15 @@ async function start() {
         player.prizeLog = player.prizeLog || [];
         player.prizeLog.push(prizeRecord);
         resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: ${chosen.title} (${chosen.promoCode})!`;
+        const couponAdmin =
+          `🎟️ <b>Купон из кейса</b>\n` +
+          `Игрок: <b>${escapeHtml(player.name)}</b>` +
+          (player.alias ? ` (${escapeHtml(player.alias)})` : "") +
+          `\nКлетка: ${player.cell}` +
+          `\nСкидка: ${escapeHtml(chosen.title)}` +
+          `\nКод: <code>${escapeHtml(chosen.promoCode || "")}</code>` +
+          `\nВыдать в магазине, затем отметить в кабинете.`;
+        void sendTelegramMessageToAdmin(couponAdmin);
       } else if (chosen.type === "item" && chosen.item) {
         player.inventory = player.inventory || [];
         player.inventory.push(chosen.item);
@@ -3907,6 +3926,8 @@ async function start() {
         player.cell = 0;
         player.skipNextTurn = false;
         player.lastRoll = null;
+        player.streak = 0;
+        player.feverMode = false;
 
         addLog({
           id: "restart_lap_" + Date.now(),

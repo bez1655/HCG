@@ -188,6 +188,11 @@ fi
 rm -f "$COPY_ERR"
 ok "файлы разложены"
 
+if [ -f "$TARGET/deploy/ОЧИСТКА-ПАПКИ-HCG.sh" ]; then
+  hdr "4b/7  Очистка старых инструкций в $TARGET"
+  bash "$TARGET/deploy/ОЧИСТКА-ПАПКИ-HCG.sh" "$TARGET" || warn "очистка папки завершилась с предупреждением"
+fi
+
 cd "$TARGET" || die "не удалось перейти в $TARGET"
 
 if grep -q "self_register" bot/src/index.ts 2>/dev/null; then

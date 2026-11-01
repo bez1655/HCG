@@ -107,6 +107,8 @@ export interface Player {
   streak?: number;
   /** Активирован ли режим Fever Mode (при streak >= 3). */
   feverMode?: boolean;
+  /** How many full board loops this player has closed. */
+  lapsCompleted?: number;
   /** Active drop box session awaiting player's choice */
   pendingDropBox?: DropBoxSession | null;
 }

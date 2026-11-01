@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Package, Sparkles, Zap, Gift, Shield, AlertTriangle } from "lucide-react";
+import { Package, Gift, Zap, Shield, AlertTriangle } from "lucide-react";
 import { DropBoxOption } from "../types";
 import { playSound } from "../utils/sounds";
 import { hapticImpact, hapticNotification } from "../utils/haptics";
+
+const NAMES = ["АЛЬФА", "БЕТА", "ГАММА"];
 
 interface DropBoxModalProps {
   cellId: number;
@@ -31,122 +32,88 @@ export default function DropBoxModal({
     onPick(index);
   };
 
-  const getOptionIcon = (type: string) => {
-    switch (type) {
-      case "jump":
-        return <Zap size={28} className="text-[#00ffaa] animate-bounce" />;
-      case "promo":
-        return <Gift size={28} className="text-[#f5c542] animate-bounce" />;
-      case "item":
-        return <Shield size={28} className="text-[#38bdf8] animate-bounce" />;
-      default:
-        return <AlertTriangle size={28} className="text-[#ff2a5f] animate-pulse" />;
-    }
+  const iconFor = (type: string) => {
+    if (type === "jump") return <Zap size={22} className="text-[#00ffaa]" />;
+    if (type === "promo") return <Gift size={22} className="text-[#f5c542]" />;
+    if (type === "item") return <Shield size={22} className="text-[#38bdf8]" />;
+    return <AlertTriangle size={22} className="text-[#ff6b9d]" />;
   };
 
+  const chosen = result?.chosen;
+  const all = result?.allOptions || [];
+
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/90 pointer-events-auto select-none">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="relative w-full max-w-md bg-[#0a0715] border-2 border-[#00ffaa]/50 rounded-2xl p-6 shadow-[0_0_50px_rgba(0,255,170,0.25)] flex flex-col items-center text-center space-y-5"
-      >
-        {/* Header */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-center gap-2 text-[#00ffaa] font-mono font-black text-sm tracking-widest uppercase">
-            <Package size={18} className="text-[#00ffaa] animate-pulse" />
-            <span>КИБЕР-ДРОП #КЛЕТКА {cellId}</span>
-          </div>
-          <p className="text-[12px] text-white/70 font-mono">
-            {!result
-              ? "Выберите один из трёх засекреченных контейнеров:"
-              : "Контейнер взломан! Ваша награда:"}
-          </p>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 bg-black/85 pointer-events-auto select-none">
+      <div className="relative w-full max-w-md bg-[#0a0715] border-2 border-[#f5c542]/60 rounded-2xl p-4 flex flex-col items-center text-center gap-3">
+        <div className="font-mono font-black text-sm text-[#f5c542] tracking-widest">
+          КИБЕР-ДРОП · КЛЕТКА {cellId}
         </div>
+        <p className="text-[11px] text-white/80 font-mono">
+          {!result ? "Выберите кейс: Альфа, Бета или Гамма" : "Содержимое всех трёх кейсов"}
+        </p>
 
-        {/* 3 Crates Grid */}
-        <div className="grid grid-cols-3 gap-3 w-full">
+        <div className="grid grid-cols-3 gap-2 w-full">
           {[0, 1, 2].map((idx) => {
-            const isPicked = selectedIndex === idx;
-            const isOther = selectedIndex !== null && !isPicked;
-            const revealData = result?.chosen && isPicked ? result.chosen : null;
-
+            const revealed = all[idx];
+            const isPicked = (selectedIndex ?? -1) === idx;
             return (
-              <motion.button
+              <button
                 key={idx}
                 type="button"
-                whileHover={selectedIndex === null ? { scale: 1.05 } : {}}
-                whileTap={selectedIndex === null ? { scale: 0.95 } : {}}
                 disabled={selectedIndex !== null}
                 onClick={() => handleSelectBox(idx)}
-                className={`relative h-32 rounded-xl border flex flex-col items-center justify-center p-2 transition-all duration-300 cursor-pointer ${
+                className={`min-h-[7.5rem] rounded-xl border p-2 flex flex-col items-center justify-center gap-1 ${
                   isPicked
-                    ? "bg-[#00ffaa]/20 border-[#00ffaa] shadow-[0_0_25px_rgba(0,255,170,0.5)]"
-                    : isOther
-                      ? "bg-black/40 border-white/10 opacity-30 cursor-not-allowed"
-                      : "bg-[#140e26] border-[#00ffaa]/30 hover:border-[#00ffaa] hover:shadow-[0_0_15px_rgba(0,255,170,0.3)]"
+                    ? "border-[#f5c542] bg-[#f5c542]/15"
+                    : "border-white/20 bg-black/50"
                 }`}
               >
+                <span className="font-mono text-[9px] text-white/70">{NAMES[idx]}</span>
                 {!result ? (
                   <>
-                    <Package
-                      size={36}
-                      className={`transition-colors ${
-                        isPicked ? "text-[#00ffaa] animate-bounce" : "text-[#00ffaa]/70"
-                      }`}
-                    />
-                    <span className="mt-2 font-mono font-black text-xs text-white/90">
-                      КЕЙС #{idx + 1}
-                    </span>
-                    <span className="font-mono text-[9px] text-[#00ffaa]/80 tracking-wider">
-                      {isPicked ? "ВЗЛОМ..." : "ОТКРЫТЬ"}
-                    </span>
+                    <Package size={28} className="text-[#f5c542]" />
+                    <span className="font-mono text-[10px] text-white">ОТКРЫТЬ</span>
                   </>
-                ) : isPicked && revealData ? (
-                  <motion.div
-                    initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="flex flex-col items-center justify-center space-y-1"
-                  >
-                    {getOptionIcon(revealData.type)}
-                    <span className="font-mono font-black text-[10px] text-[#00ffaa] leading-tight">
-                      {revealData.title}
+                ) : revealed ? (
+                  <>
+                    {iconFor(revealed.type)}
+                    <span className="font-mono text-[9px] text-white leading-tight">
+                      {revealed.title}
                     </span>
-                  </motion.div>
+                    {revealed.promoCode && (
+                      <span className="font-mono text-[10px] font-black text-[#f5c542] break-all">
+                        {revealed.promoCode}
+                      </span>
+                    )}
+                    {isPicked && (
+                      <span className="font-mono text-[8px] text-[#00ffaa]">ВАШ ВЫБОР</span>
+                    )}
+                  </>
                 ) : (
-                  <Package size={24} className="text-white/20" />
+                  <Package size={22} className="text-white/30" />
                 )}
-              </motion.button>
+              </button>
             );
           })}
         </div>
 
-        {/* Revealed Outcome Card */}
-        <AnimatePresence>
-          {result?.chosen && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="w-full bg-black/60 border border-[#00ffaa]/40 rounded-xl p-3.5 space-y-2 text-left"
-            >
-              <div className="flex items-center gap-2 text-[#00ffaa] font-mono font-bold text-xs uppercase">
-                <Sparkles size={16} />
-                <span>{result.chosen.title}</span>
-              </div>
-              <p className="text-[11px] font-mono text-white/80 leading-relaxed">
-                {result.chosen.description}
-              </p>
-              {result.chosen.promoCode && (
-                <div className="bg-[#00ffaa]/10 border border-[#00ffaa]/30 rounded px-2.5 py-1 text-center font-mono font-black text-sm text-[#00ffaa] tracking-widest">
-                  {result.chosen.promoCode}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {chosen?.promoCode && (
+          <div className="w-full border border-[#f5c542] rounded-xl p-3 bg-[#f5c542]/10">
+            <div className="text-[10px] font-mono text-white/70 uppercase">Ваш купон в Hapstore</div>
+            <div className="font-mono font-black text-lg text-[#f5c542] tracking-widest break-all">
+              {chosen.promoCode}
+            </div>
+            <div className="text-[10px] text-white/80 mt-1">{chosen.title}</div>
+            <div className="text-[10px] text-white/50">Сохранён в «Мои призы»</div>
+          </div>
+        )}
 
-        {/* Action Button */}
+        {chosen && !chosen.promoCode && (
+          <div className="w-full border border-white/20 rounded-xl p-2 text-[11px] font-mono text-white/80">
+            {chosen.title}: {chosen.description}
+          </div>
+        )}
+
         {result ? (
           <button
             type="button"
@@ -155,16 +122,14 @@ export default function DropBoxModal({
               hapticNotification("success");
               onClose();
             }}
-            className="w-full py-3 bg-[#00ffaa] hover:bg-[#00ffaa]/80 text-black font-mono font-black text-xs uppercase tracking-widest rounded-xl transition cursor-pointer shadow-[0_0_20px_rgba(0,255,170,0.4)]"
+            className="w-full py-3 bg-[#f5c542] text-black font-mono font-black text-xs uppercase rounded-xl"
           >
-            Забрать и продолжить
+            Понятно
           </button>
         ) : (
-          <div className="font-mono text-[10px] text-white/40 tracking-wider">
-            ⚡ НАЖМИТЕ НА ЛЮБОЙ КЕЙС, ЧТОБЫ УЗНАТЬ СОДЕРЖИМОЕ
-          </div>
+          <div className="font-mono text-[10px] text-white/40">Нажмите на кейс</div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -371,10 +371,11 @@ export default function App() {
     });
 
     newSocket.on("dropbox:available", (data: { cellId: number; options: DropBoxOption[] }) => {
+      setTurnOutcome(null);
       window.setTimeout(() => {
         setDropBoxSession(data);
         setDropBoxResult(null);
-      }, 1600);
+      }, 400);
     });
 
     newSocket.on("dropbox:result", (data: { chosen: DropBoxOption; allOptions: DropBoxOption[] }) => {
@@ -667,7 +668,8 @@ export default function App() {
       <div className="h-[100dvh] w-full bg-[#060412] text-white flex items-center justify-center overflow-hidden">
         <div className="relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black overflow-hidden">
           <video
-            src="/Splash.mp4?v=12"
+            src="/Splash.mp4?v=13"
+            poster="/Splash.png?v=13"
             autoPlay
             loop
             muted

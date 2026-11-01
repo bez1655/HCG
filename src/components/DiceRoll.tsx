@@ -47,7 +47,7 @@ const HOLD_MS = 1600;
  * single time, not on every render. Nothing here depends on the rolled
  * value — the final angle arrives through the --face custom property.
  */
-const STYLE_ID = "hcg-dice-roll-styles-hw";
+const STYLE_ID = "hcg-dice-roll-styles-dm";
 const CSS = `
 @keyframes hcg-dice-spin {
   0%   { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(0.5); }
@@ -71,7 +71,7 @@ const CSS = `
   position: fixed; inset: 0; z-index: 200;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  background: rgba(8,2,0,.55);
+  background: rgba(4,10,16,.62);
   isolation: isolate;
   perspective: 720px;
   animation: hcg-dice-fade .18s ease-out both;
@@ -84,13 +84,13 @@ const CSS = `
   width: 100%; height: 100%; object-fit: contain;
   will-change: transform;
   transform-style: preserve-3d;
-  filter: drop-shadow(0 18px 22px rgba(0,0,0,.65));
+  filter: drop-shadow(0 0 16px rgba(0,255,234,.45)) drop-shadow(0 14px 22px rgba(0,0,0,.7));
 }
 .hcg-dice-img.is-spinning { animation: hcg-dice-spin ${SPIN_MS}ms cubic-bezier(.2,.75,.25,1) both; }
 .hcg-dice-img.is-landed   { animation: hcg-dice-land 480ms cubic-bezier(.2,1.35,.35,1) both; }
 .hcg-dice-ring {
   position: absolute; inset: 8%;
-  border: 2px solid var(--face-color, #ff7a18);
+  border: 2px solid var(--face-color, #00ffea);
   border-radius: 50%;
   animation: hcg-dice-ring 900ms ease-out both;
   pointer-events: none;
@@ -101,12 +101,12 @@ const CSS = `
   min-width: 56px;
   padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(20,8,0,.78);
-  border: 1px solid rgba(255,140,40,.55);
+  background: rgba(6,14,18,.86);
+  border: 1px solid rgba(0,255,234,.55);
   display: flex; align-items: center; justify-content: center;
   font: 900 28px/1 Orbitron, system-ui, sans-serif;
-  color: var(--face-color, #ffb84d);
-  text-shadow: 0 0 12px #ff7a18;
+  color: var(--face-color, #ffb020);
+  text-shadow: 0 0 12px #00ffea;
   pointer-events: none;
 }
 .hcg-dice-caption {
@@ -132,12 +132,12 @@ function ensureStyles(): void {
 
 /** Colour per face. Cosmetic only. */
 const FACE_COLOURS: Record<number, string> = {
-  1: "#ffb84d",
-  2: "#ff7a18",
-  3: "#e07012",
-  4: "#ffd36a",
-  5: "#c45c0c",
-  6: "#fff3d0",
+  1: "#ffb020",
+  2: "#00ffea",
+  3: "#ffb020",
+  4: "#00ffea",
+  5: "#ffb020",
+  6: "#7dd3fc",
 };
 
 export default function DiceRoll({ result, onDone }: DiceRollProps) {
@@ -221,7 +221,7 @@ export default function DiceRoll({ result, onDone }: DiceRollProps) {
       <div className="hcg-dice-stage">
         {landed && <div className="hcg-dice-ring" />}
         <img
-          src="/Dice.png?v=11"
+          src="/Dice.png?v=13"
           alt=""
           draggable={false}
           className={`hcg-dice-img ${landed ? "is-landed" : "is-spinning"}`}

@@ -1092,20 +1092,20 @@ export default function BoardView({
           {/* Background Map: Video with GPU acceleration or Static Image in Eco Mode */}
           {ecoMode ? (
             <img
-              src="/BoardHAP.png?v=10"
+              src="/BoardHAP.png?v=13"
               alt="Игровое поле"
               className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
             />
           ) : (
             <video
               ref={boardVideoRef}
-              src="/BoardHAP.mp4?v=10"
+              src="/BoardHAP.mp4?v=13"
               autoPlay
               loop
               muted
               playsInline
               preload="metadata"
-              poster="/BoardHAP.png?v=10"
+              poster="/BoardHAP.png?v=13"
               disablePictureInPicture
               disableRemotePlayback
               className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 [transform:translateZ(0)]"
@@ -1292,6 +1292,20 @@ export default function BoardView({
 
           {/* 2. Bottom-Left Corner: Inventory Bar & Compact Dice Roll Button */}
           <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-[80] pointer-events-auto flex flex-col items-center gap-2">
+            {(me?.prizeLog || [])
+              .filter((r) => !r.redeemed && typeof r.extra === "string" && r.extra.startsWith("HAP-"))
+              .slice(-2)
+              .map((r) => (
+                <div
+                  key={r.extra}
+                  className="w-full max-w-[160px] bg-black/80 border border-[#f5c542] rounded-lg px-2 py-1 text-center"
+                >
+                  <div className="font-mono text-[8px] text-white/60 uppercase">купон кейса</div>
+                  <div className="font-mono font-black text-[11px] text-[#f5c542] break-all">
+                    {r.extra}
+                  </div>
+                </div>
+              ))}
             {/* Quick Cyber-Inventory Bar */}
             <InventoryBar
               inventory={me?.inventory}
@@ -1343,7 +1357,7 @@ export default function BoardView({
                 }`}
               >
                 <img
-                  src="/Dice.png?v=11"
+                  src="/Dice.png?v=13"
                   alt="Dice"
                   className="w-[44px] h-[44px] object-contain filter drop-shadow-[0_0_10px_rgba(255,122,24,0.85)]"
                   style={{ width: "44px", height: "44px" }}

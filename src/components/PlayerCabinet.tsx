@@ -110,7 +110,14 @@ export default function PlayerCabinet({
             )}
             {rows.map((r, i) => (
               <div key={i} className="border border-white/10 rounded-lg p-2">
-                <div className="font-bold text-[#00ffaa]">{r.extra || r.name}</div>
+                <div className="font-bold text-[#00ffaa]">{r.name}</div>
+                {r.extra && r.extra.startsWith("HAP-") ? (
+                  <div className="mt-1 border border-[#f5c542]/50 rounded px-2 py-1 font-mono font-black text-[#f5c542] tracking-widest text-sm">
+                    {r.extra}
+                  </div>
+                ) : r.extra ? (
+                  <div className="text-[11px] text-white/70">{r.extra}</div>
+                ) : null}
                 <div className="text-[10px] text-white/50">
                   {new Date(r.at).toLocaleString("ru-RU")} · {r.redeemed ? "выдан в магазине" : "ещё не выдан"}
                 </div>
