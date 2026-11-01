@@ -503,7 +503,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-01.1";
+const SERVER_BUILD = "2026-11-01.2";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -3102,9 +3102,13 @@ async function start() {
        * (сохранение прошлой версии) считаем пачку открытой только что — тогда
        * приз, полученный до обновления, честно признаётся старым.
        */
-      const approvalStartedAt = player.turnBatchStartedAt ?? Date.now();
+      // Missing batch stamp must NOT mean "bonus is older than now" — that
+      // blocked every roll after any prize. Unknown start = treat as in-batch.
+      const approvalStartedAt = player.turnBatchStartedAt ?? 0;
       const bonusPredatesBatch =
-        !!player.activeBonus && player.activeBonus.receivedAt < approvalStartedAt;
+        !!player.activeBonus &&
+        !!player.turnBatchStartedAt &&
+        player.activeBonus.receivedAt < approvalStartedAt;
 
       if (player.activeBonus && bonusPredatesBatch && !isAdminOrTest) {
         log.warn("roll:request rejected: unused bonus", {
@@ -4240,8 +4244,22 @@ async function start() {
 
     // Admin explicitly consumes/redeems a player's active bonus
     socket.on("admin:consume_bonus", (pId: string) => {
-      if (!isAdmin) return;
-      const player = gameState.players.find((p) => p.id === pId);
+      if (!isAdmin) {
+        socket.emit("error", "Списать бонус может только администратор.");
+        return;
+      }
+      const needle = String(pId || "");
+      const player = gameState.players.find(
+        (p) => p.id === needle || p.name === needle || p.alias === needle
+      );
+      if (!player) {
+        socket.emit("error", "Игрок для списания бонуса не найден.");
+        return;
+      }
+      if (!player.activeBonus) {
+        socket.emit("error", "У этого игрока нет активного бонуса.");
+        return;
+      }
       if (player && player.activeBonus) {
         const usedBonus = player.activeBonus;
         markPrizeRedeemed(player, usedBonus.extra || usedBonus.name);

@@ -624,9 +624,11 @@ export default function App() {
   };
 
   const handleConsumeBonus = (pId: string) => {
-    if (socket && userRole === "admin") {
-      socket.emit("admin:consume_bonus", pId);
+    if (!socket) {
+      setServerError("Нет связи с сервером — списать бонус нельзя.");
+      return;
     }
+    socket.emit("admin:consume_bonus", pId);
   };
 
   const handleGrantItem = (pId: string, item: "shield" | "loaded_dice" | "magnet") => {

@@ -8,7 +8,7 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-11-01.1";
+export const BUILD = "2026-11-01.2";
 export const FEATURES = [
   "inventory shield dice magnet, fever, drop boxes, skins, gifts, haptics",
   "board FPS: no ambient blur, no particle canvas, eco default on phones",

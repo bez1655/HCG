@@ -1268,12 +1268,8 @@ export default function BoardView({
           {/* --- BOTTOM GAME BOARD ACTION HUD PANEL --- */}
           {/* 1. Center: Active Prize Control Bonus Notice */}
           {me?.activeBonus && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex flex-col items-center">
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-yellow-950/95 backdrop-blur-xl border-2 border-yellow-500/70 rounded-xl p-3 text-center w-full max-w-xs md:max-w-sm pointer-events-auto flex flex-col items-center gap-1.5 shadow-[0_0_20px_rgba(234,179,8,0.3)]"
-              >
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center">
+              <div className="bg-yellow-950/95 border-2 border-yellow-500/70 rounded-xl p-3 text-center w-full max-w-xs md:max-w-sm flex flex-col items-center gap-1.5 pointer-events-none">
                 <div className="flex items-center gap-1.5 font-syne text-[11px] text-yellow-400 font-extrabold uppercase tracking-wider">
                   <Gift size={16} className="text-yellow-400 animate-bounce" />
                   СИСТЕМА КОНТРОЛЯ ПРИЗОВ
@@ -1286,7 +1282,7 @@ export default function BoardView({
                   должны использовать данный бонус в Таблице Жизни и дождаться списания
                   администратором!
                 </p>
-              </motion.div>
+              </div>
             </div>
           )}
 
