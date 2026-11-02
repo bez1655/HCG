@@ -67,20 +67,20 @@ interface AdminConsoleProps {
  */
 function TurnCountPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   return (
-    <span className="inline-flex items-center border border-[#00ffaa]/25 rounded-sm overflow-hidden font-mono">
+    <span className="inline-flex items-center border border-[#00ffea]/25 rounded-sm overflow-hidden font-mono">
       <button
         type="button"
         onClick={() => {
           playSound("click");
           onChange(Math.max(1, value - 1));
         }}
-        className="px-1.5 py-0.5 text-[10px] text-[#00ffaa]/80 hover:bg-[#00ffaa]/15 cursor-pointer"
+        className="px-1.5 py-0.5 text-[10px] text-[#00ffea]/80 hover:bg-[#00ffea]/15 cursor-pointer"
         title="Меньше ходов"
         aria-label="Меньше ходов"
       >
         −
       </button>
-      <span className="px-1.5 text-[10px] font-black text-[#00ffaa] min-w-[16px] text-center">
+      <span className="px-1.5 text-[10px] font-black text-[#00ffea] min-w-[16px] text-center">
         {value}
       </span>
       <button
@@ -89,7 +89,7 @@ function TurnCountPicker({ value, onChange }: { value: number; onChange: (n: num
           playSound("click");
           onChange(Math.min(10, value + 1));
         }}
-        className="px-1.5 py-0.5 text-[10px] text-[#00ffaa]/80 hover:bg-[#00ffaa]/15 cursor-pointer"
+        className="px-1.5 py-0.5 text-[10px] text-[#00ffea]/80 hover:bg-[#00ffea]/15 cursor-pointer"
         title="Больше ходов"
         aria-label="Больше ходов"
       >
@@ -102,7 +102,7 @@ function TurnCountPicker({ value, onChange }: { value: number; onChange: (n: num
 const ADMIN_COLORS = ["#FF0055", "#FF5500", "#FFFF00", "#39FF14", "#00FFFF", "#FF00FF", "#ffffff"];
 // Фишки хранятся как SVG: PNG-версии были повреждены, а вектор ещё и
 // принимает цвет игрока.
-const CHIP_MODELS = Array.from({ length: 13 }, (_, i) => `/chips/chip_${i + 1}.svg?v=hw1`);
+const CHIP_MODELS = Array.from({ length: 13 }, (_, i) => `/chips/chip_${i + 1}.svg?v=dm2`);
 
 export default function AdminConsole({
   gameState,
@@ -300,19 +300,17 @@ export default function AdminConsole({
   return (
     <div
       id="admin_console"
-      className="relative h-full w-full bg-[#0d0d0f] text-[#e0e0e6] flex flex-col font-sans overflow-y-auto scrollbar-none select-none"
+      className="relative h-full w-full bg-[#0B0E14] text-[#e8eef2] flex flex-col font-sans overflow-y-auto scrollbar-none select-none"
     >
-      {/* Grid background */}
-      <div className="fixed inset-0 bg-[radial-gradient(rgba(224,224,230,0.03)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none z-0" />
+      <div className="fixed inset-0 bg-[radial-gradient(rgba(0,255,234,0.04)_1px,transparent_1px)] bg-[size:36px_36px] pointer-events-none z-0" />
 
-      {/* Header */}
-      <header className="w-full border-b border-[rgba(224,224,230,0.1)] bg-[#0d0d0f]/90 backdrop-blur-none p-4 sm:p-6 px-6 sm:px-8 flex flex-col md:flex-row justify-between items-center gap-4 z-30 sticky top-0 shrink-0">
+      <header className="w-full border-b border-[#00ffea]/20 bg-[#0B0E14]/95 p-4 sm:p-6 px-6 sm:px-8 flex flex-col md:flex-row justify-between items-center gap-4 z-30 sticky top-0 shrink-0">
         <div className="brand flex flex-col">
-          <h1 className="font-syne text-2xl font-black uppercase tracking-tight text-white bg-gradient-to-r from-white to-[#00ffaa] bg-clip-text text-transparent">
-            HAPSTORE // CORE
+          <h1 className="font-syne text-2xl font-black uppercase tracking-tight text-transparent bg-gradient-to-r from-[#00ffea] to-[#ffb020] bg-clip-text">
+            HAPSTORE // DARK MARKET
           </h1>
-          <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#e0e0e6]/50">
-            КОНСОЛЬ АДМИНИСТРАТОРА
+          <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#00ffea]/60">
+            КОНСОЛЬ СМОТРИТЕЛЯ МАРКЕТА
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -393,7 +391,7 @@ export default function AdminConsole({
               [ REGISTRATION_MODULE ]
             </span>
             <div className="font-syne text-sm font-extrabold uppercase text-[#e0e0e6] mb-6 flex items-center gap-2">
-              <Plus size={16} className="text-[#00ffaa]" />
+              <Plus size={16} className="text-[#00ffea]" />
               РЕГИСТРАЦИЯ ИГРОКА
             </div>
             <form onSubmit={handleCreatePlayer} className="space-y-5">
@@ -406,7 +404,7 @@ export default function AdminConsole({
                   value={newRegName}
                   onChange={(e) => setNewRegName(e.target.value)}
                   required
-                  className="w-full bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-3 text-sm text-[#e0e0e6] focus:outline-none focus:border-[#00ffaa] transition font-sans"
+                  className="w-full bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-3 text-sm text-[#e0e0e6] focus:outline-none focus:border-[#00ffea] transition font-sans"
                   placeholder="Например: @username"
                 />
               </div>
@@ -419,7 +417,7 @@ export default function AdminConsole({
                   type="text"
                   value={newRegPassword}
                   onChange={(e) => setNewRegPassword(e.target.value)}
-                  className="w-full bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-3 text-sm text-[#e0e0e6] focus:outline-none focus:border-[#00ffaa] transition font-sans"
+                  className="w-full bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-3 text-sm text-[#e0e0e6] focus:outline-none focus:border-[#00ffea] transition font-sans"
                   placeholder="Пароль"
                 />
               </div>
@@ -455,7 +453,7 @@ export default function AdminConsole({
                     onClick={() => setNewRegChipImage("")}
                     className={`col-span-5 py-1 px-2 text-[10px] font-mono font-bold uppercase tracking-wider border rounded cursor-pointer transition flex items-center justify-center gap-1 ${
                       !newRegChipImage
-                        ? "border-[#00ffaa] bg-[#00ffaa]/15 text-[#00ffaa]"
+                        ? "border-[#00ffea] bg-[#00ffea]/15 text-[#00ffea]"
                         : "border-white/10 text-white/50 hover:bg-white/5"
                     }`}
                   >
@@ -469,7 +467,7 @@ export default function AdminConsole({
                       onClick={() => setNewRegChipImage(chipPath)}
                       className={`p-1.5 border rounded-sm flex items-center justify-center aspect-square transition cursor-pointer ${
                         newRegChipImage === chipPath
-                          ? "border-[#00ffaa] bg-[#00ffaa]/20 shadow-[0_0_8px_rgba(0,255,170,0.4)]"
+                          ? "border-[#00ffea] bg-[#00ffea]/20 shadow-[0_0_8px_rgba(0,255,170,0.4)]"
                           : "border-white/10 hover:border-white/30 bg-black/40"
                       }`}
                       title={`Фишка ${idx + 1}`}
@@ -486,7 +484,7 @@ export default function AdminConsole({
 
               <button
                 type="submit"
-                className="w-full btn py-3 px-6 font-mono text-[11px] font-bold uppercase tracking-widest bg-[#0d0d0f] border border-[#00ffaa] text-[#00ffaa] hover:bg-[#00ffaa] hover:text-[#0d0d0f] transition cursor-pointer"
+                className="w-full btn py-3 px-6 font-mono text-[11px] font-bold uppercase tracking-widest bg-[#0d0d0f] border border-[#00ffea] text-[#00ffea] hover:bg-[#00ffea] hover:text-[#0d0d0f] transition cursor-pointer"
               >
                 Зарегистрировать
               </button>
@@ -504,13 +502,13 @@ export default function AdminConsole({
                   STATUS: ACTIVE
                 </span>
                 <div className="font-syne text-sm font-extrabold uppercase text-[#e0e0e6] mb-4 flex items-center gap-2">
-                  <ShieldAlert size={16} className="text-[#00ffaa]" />
+                  <ShieldAlert size={16} className="text-[#00ffea]" />
                   АВТОМОДЕРАЦИЯ
                 </div>
-                <div className="bg-[#0d0d0f]/60 p-4 border-l-4 border-[#00ffaa] rounded-sm">
+                <div className="bg-[#0d0d0f]/60 p-4 border-l-4 border-[#00ffea] rounded-sm">
                   <div className="flex justify-between items-center mb-2 font-mono text-[10px]">
                     <span className="opacity-50">СИСТЕМА:</span>
-                    <span className="text-[#00ffaa] font-bold animate-pulse">АВТОПИЛОТ ON</span>
+                    <span className="text-[#00ffea] font-bold animate-pulse">АВТОПИЛОТ ON</span>
                   </div>
                   <p className="text-xs text-[#e0e0e6]/80 leading-relaxed font-sans">
                     Модерация результатов бросков отключена. Броски кубиков и переходы по клеткам
@@ -527,7 +525,7 @@ export default function AdminConsole({
                   ADMIN_TOOLSET
                 </span>
                 <div className="font-syne text-sm font-extrabold uppercase text-[#e0e0e6] mb-4 flex items-center gap-2">
-                  <Sliders size={16} className="text-[#00ffaa]" />
+                  <Sliders size={16} className="text-[#00ffea]" />
                   ИНСТРУМЕНТЫ
                 </div>
                 <div className="flex flex-col gap-3">
@@ -569,7 +567,7 @@ export default function AdminConsole({
                   <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#e0e0e6]/60">
                     Скрывать фишки после
                   </span>
-                  <span className="font-mono text-[11px] font-bold text-[#00ffaa]">
+                  <span className="font-mono text-[11px] font-bold text-[#00ffea]">
                     {hideHours > 0 ? `${hideHours} ч` : "не скрывать"}
                   </span>
                 </div>
@@ -591,8 +589,8 @@ export default function AdminConsole({
                       }}
                       className={`px-2.5 py-1 rounded font-mono text-[10px] border transition cursor-pointer ${
                         hideHours === opt.h
-                          ? "bg-[#00ffaa] text-black border-[#00ffaa]"
-                          : "bg-black/40 text-[#00ffaa]/70 border-[#00ffaa]/25 hover:bg-[#00ffaa]/15"
+                          ? "bg-[#00ffea] text-black border-[#00ffea]"
+                          : "bg-black/40 text-[#00ffea]/70 border-[#00ffea]/25 hover:bg-[#00ffea]/15"
                       }`}
                     >
                       {opt.label}
@@ -622,7 +620,7 @@ export default function AdminConsole({
                   КАЛИБРОВКА СЕТКИ
                 </span>
                 <div
-                  className={`w-8 h-4 rounded-full relative transition-colors duration-200 ${gameState.calibrationMode ? "bg-[#00ffaa]" : "bg-neutral-800"}`}
+                  className={`w-8 h-4 rounded-full relative transition-colors duration-200 ${gameState.calibrationMode ? "bg-[#00ffea]" : "bg-neutral-800"}`}
                 >
                   <div
                     className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all duration-200 ${gameState.calibrationMode ? "left-4.5" : "left-0.5"}`}
@@ -640,7 +638,7 @@ export default function AdminConsole({
                   MEDIA_SETTINGS
                 </span>
                 <div className="font-syne text-sm font-extrabold uppercase text-[#e0e0e6] flex items-center gap-2">
-                  <Image size={18} className="text-[#00ffaa]" />
+                  <Image size={18} className="text-[#00ffea]" />
                   УПРАВЛЕНИЕ ФОНАМИ ЭКРАНОВ
                 </div>
               </div>
@@ -658,7 +656,7 @@ export default function AdminConsole({
                     <span className="font-syne text-xs font-bold text-[#e0e0e6] uppercase">
                       1. Основной экран (Поле)
                     </span>
-                    <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30">
+                    <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30">
                       BoardHAP.mp4
                     </span>
                   </div>
@@ -668,7 +666,7 @@ export default function AdminConsole({
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
-                  <div className="w-full py-2 px-3 font-mono text-[10px] font-bold bg-white/5 border border-white/10 text-[#00ffaa] text-center rounded uppercase tracking-wider flex items-center justify-center gap-1.5">
+                  <div className="w-full py-2 px-3 font-mono text-[10px] font-bold bg-white/5 border border-white/10 text-[#00ffea] text-center rounded uppercase tracking-wider flex items-center justify-center gap-1.5">
                     <Video size={12} />
                     Стандартный Видеофон Установлен
                   </div>
@@ -683,7 +681,7 @@ export default function AdminConsole({
                       2. Экран Входа (Логин)
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded text-[9px] font-mono ${gameState.loginBackground ? "bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30" : "bg-white/5 text-gray-400"}`}
+                      className={`px-2 py-0.5 rounded text-[9px] font-mono ${gameState.loginBackground ? "bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30" : "bg-white/5 text-gray-400"}`}
                     >
                       {gameState.loginBackground ? "Свой фон" : "По умолчанию"}
                     </span>
@@ -694,7 +692,7 @@ export default function AdminConsole({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="w-full btn py-2 px-3 font-mono text-[10px] font-bold bg-[#00ffaa]/10 border border-[#00ffaa] text-[#00ffaa] hover:bg-[#00ffaa]/20 transition text-center cursor-pointer uppercase tracking-wider flex items-center justify-center gap-1.5">
+                  <label className="w-full btn py-2 px-3 font-mono text-[10px] font-bold bg-[#00ffea]/10 border border-[#00ffea] text-[#00ffea] hover:bg-[#00ffea]/20 transition text-center cursor-pointer uppercase tracking-wider flex items-center justify-center gap-1.5">
                     <Image size={12} />
                     Загрузить Файл
                     <input
@@ -728,7 +726,7 @@ export default function AdminConsole({
                       3. Экран Правил
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded text-[9px] font-mono ${gameState.rulesBackground ? "bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30" : "bg-white/5 text-gray-400"}`}
+                      className={`px-2 py-0.5 rounded text-[9px] font-mono ${gameState.rulesBackground ? "bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30" : "bg-white/5 text-gray-400"}`}
                     >
                       {gameState.rulesBackground ? "Свой фон" : "По умолчанию"}
                     </span>
@@ -739,7 +737,7 @@ export default function AdminConsole({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="w-full btn py-2 px-3 font-mono text-[10px] font-bold bg-[#00ffaa]/10 border border-[#00ffaa] text-[#00ffaa] hover:bg-[#00ffaa]/20 transition text-center cursor-pointer uppercase tracking-wider flex items-center justify-center gap-1.5">
+                  <label className="w-full btn py-2 px-3 font-mono text-[10px] font-bold bg-[#00ffea]/10 border border-[#00ffea] text-[#00ffea] hover:bg-[#00ffea]/20 transition text-center cursor-pointer uppercase tracking-wider flex items-center justify-center gap-1.5">
                     <Image size={12} />
                     Загрузить Файл
                     <input
@@ -916,7 +914,7 @@ export default function AdminConsole({
                                   onChange={(e) =>
                                     handlePlayerEditChange(p.id, "name", e.target.value)
                                   }
-                                  className="bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-1.5 text-xs text-[#e0e0e6] focus:outline-none focus:border-[#00ffaa] font-mono"
+                                  className="bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-1.5 text-xs text-[#e0e0e6] focus:outline-none focus:border-[#00ffea] font-mono"
                                 />
                                 <PlayerAchievementBadges player={p} gameState={gameState} compact />
                               </div>
@@ -924,7 +922,7 @@ export default function AdminConsole({
                           </td>
                           {/* Password Security Status */}
                           <td className="p-4 font-mono text-xs">
-                            <span className="px-2 py-1 rounded bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30 text-[10px] font-bold flex items-center gap-1 w-fit">
+                            <span className="px-2 py-1 rounded bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30 text-[10px] font-bold flex items-center gap-1 w-fit">
                               🔒 PBKDF2 ХЭШ
                             </span>
                           </td>
@@ -933,7 +931,7 @@ export default function AdminConsole({
                             <div className="flex items-center gap-2">
                               <ChipImage
                                 src={edit.chipImage || p.chipImage || "/chips/chip_1.svg"}
-                                color={edit.color || p.color || "#00ffaa"}
+                                color={edit.color || p.color || "#00ffea"}
                                 label="Модель фишки"
                                 className="w-7 h-7 p-0.5 border border-white/20 rounded bg-black/60 [&>svg]:w-full [&>svg]:h-full"
                               />
@@ -1070,7 +1068,7 @@ export default function AdminConsole({
                           <td className="p-4">
                             {turnsLeft(p) > 0 ? (
                               <div className="flex flex-col items-start font-mono gap-1">
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30 uppercase">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30 uppercase">
                                   Одобрено: {turnsLeft(p)} {pluralizeTurns(turnsLeft(p))}
                                 </span>
                                 {/* Здесь показывался остаток 12-часового окна.
@@ -1088,7 +1086,7 @@ export default function AdminConsole({
                                       playSound("success");
                                       onApprovePlayerTurn?.(p.id, !!p.activeBonus, turnsFor(p));
                                     }}
-                                    className="btn py-1 px-2 bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30 hover:bg-[#00ffaa]/20 rounded-sm text-[8px] cursor-pointer uppercase"
+                                    className="btn py-1 px-2 bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30 hover:bg-[#00ffea]/20 rounded-sm text-[8px] cursor-pointer uppercase"
                                     title="Заменить остаток новым количеством"
                                   >
                                     Задать
@@ -1125,7 +1123,7 @@ export default function AdminConsole({
                                         onApprovePlayerTurn?.(p.id, false, turnsFor(p));
                                       }
                                     }}
-                                    className="btn py-1 px-2.5 bg-[#00ffaa]/10 text-[#00ffaa] border border-[#00ffaa]/30 hover:bg-[#00ffaa]/20 rounded-sm text-[9px] cursor-pointer flex items-center gap-1"
+                                    className="btn py-1 px-2.5 bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30 hover:bg-[#00ffea]/20 rounded-sm text-[9px] cursor-pointer flex items-center gap-1"
                                     title={`Одобрить ${turnsFor(p)} ${pluralizeTurns(turnsFor(p))} — без ограничения по времени`}
                                   >
                                     Одобрить {turnsFor(p)}
@@ -1177,7 +1175,7 @@ export default function AdminConsole({
                           <td className="p-4 text-right space-x-2 whitespace-nowrap">
                             <button
                               onClick={() => handleSavePlayer(p.id)}
-                              className="btn py-1.5 px-2.5 bg-[#00ffaa]/15 hover:bg-[#00ffaa]/25 text-[#00ffaa] border border-[#00ffaa]/20 rounded-sm text-[9px] cursor-pointer uppercase font-mono tracking-widest inline-flex items-center gap-1 transition"
+                              className="btn py-1.5 px-2.5 bg-[#00ffea]/15 hover:bg-[#00ffea]/25 text-[#00ffea] border border-[#00ffea]/20 rounded-sm text-[9px] cursor-pointer uppercase font-mono tracking-widest inline-flex items-center gap-1 transition"
                             >
                               <Save size={12} />
                               SAVE
@@ -1226,7 +1224,7 @@ export default function AdminConsole({
             <p className="text-xs text-white/80 leading-relaxed font-mono">
               Участник{" "}
               <span
-                className="font-bold text-[#00ffaa]"
+                className="font-bold text-[#00ffea]"
                 style={{ color: bonusConfirmPlayer.color }}
               >
                 {bonusConfirmPlayer.name}
@@ -1271,7 +1269,7 @@ export default function AdminConsole({
                   onApprovePlayerTurn?.(bonusConfirmPlayer.id, true, turnsFor(bonusConfirmPlayer));
                   setBonusConfirmPlayer(null);
                 }}
-                className="w-full btn py-2.5 px-3 bg-[#00ffaa] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffaa]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)]"
+                className="w-full btn py-2.5 px-3 bg-[#00ffea] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffea]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)]"
               >
                 ✅ Подтвердить бонус и выдать {turnsFor(bonusConfirmPlayer)}{" "}
                 {pluralizeTurns(turnsFor(bonusConfirmPlayer))}
@@ -1302,10 +1300,10 @@ export default function AdminConsole({
       )}
 
       {/* Footer */}
-      <footer className="col-span-full border-t border-[rgba(224,224,230,0.1)] p-4 px-8 flex justify-between items-center font-mono text-[10px] text-[#e0e0e6]/40 bg-[#0d0d0f] relative z-20">
-        <div>SYSTEM STATUS: OPTIMAL</div>
-        <div>HAPSTORE CORE V1.0.4 // 2026</div>
-        <div>COORDINATES: 55.7558, 37.6173</div>
+      <footer className="col-span-full border-t border-[#00ffea]/15 p-4 px-8 flex justify-between items-center font-mono text-[10px] text-[#00ffea]/40 bg-[#0B0E14] relative z-20">
+        <div>MARKET NIGHT SHIFT</div>
+        <div>HAPSTORE DARK MARKET // 2026</div>
+        <div>ВИТРИНА ОНЛАЙН</div>
       </footer>
     </div>
   );

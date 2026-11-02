@@ -12,7 +12,7 @@ interface PlayerTokenProps {
 const PlayerToken = React.memo(({ player, isMe }: PlayerTokenProps) => {
   const chipSrc =
     (player.chipImage || "/chips/chip_1.svg").replace(/\.png$/i, ".svg") +
-    ((player.chipImage || "").includes("?") ? "" : "?v=hw1");
+    ((player.chipImage || "").includes("?") ? "" : "?v=dm2");
   const isFever = !!player.feverMode;
   const neonColor = isFever ? "#FFD700" : player.color || "#00ffaa";
   const isOnline = player.isOnline !== false;

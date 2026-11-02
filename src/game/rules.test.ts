@@ -156,14 +156,14 @@ describe("canRoll — prize control", () => {
     expect(canRoll({ ...base, turnApprovedUntil: Date.now() + 60_000 }).allowed).toBe(true);
   });
 
-  it("blocks an approved player holding an unused bonus", () => {
+  it("does not block an approved player holding an unused shop prize", () => {
     const r = canRoll({
       ...base,
       turnApprovedUntil: Date.now() + 60_000,
+      turnsApproved: 1,
       activeBonus: { name: "ПРИЗ", receivedAt: Date.now() },
     });
-    expect(r.allowed).toBe(false);
-    expect(r.reason).toBe("unused-bonus");
+    expect(r.allowed).toBe(true);
   });
 
   it("blocks a player serving a skip penalty", () => {

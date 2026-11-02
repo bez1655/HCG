@@ -265,7 +265,6 @@ export function canRoll(
   if (isAdmin) return { allowed: true };
 
   if (turnsLeft(player, now) === 0) return { allowed: false, reason: "not-approved" };
-  if (player.activeBonus) return { allowed: false, reason: "unused-bonus" };
   if (player.skipNextTurn) return { allowed: false, reason: "skip-turn" };
 
   return { allowed: true };

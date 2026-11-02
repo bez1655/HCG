@@ -624,11 +624,29 @@ export default function App() {
   };
 
   const handleConsumeBonus = (pId: string) => {
-    if (!socket) {
-      setServerError("Нет связи с сервером — списать бонус нельзя.");
-      return;
-    }
-    socket.emit("admin:consume_bonus", pId);
+    const token = localStorage.getItem("hapstore_token") || "";
+    void apiFetch("/api/admin/consume-bonus", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+      body: JSON.stringify({ playerId: pId, token }),
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          playSound("success");
+          return;
+        }
+        if (socket) socket.emit("admin:consume_bonus", { playerId: pId });
+        setServerError(data.error || "Не удалось списать бонус.");
+        playSound("error");
+      })
+      .catch(() => {
+        if (socket) socket.emit("admin:consume_bonus", { playerId: pId });
+        else setServerError("Нет связи с сервером — списать бонус нельзя.");
+      });
   };
 
   const handleGrantItem = (pId: string, item: "shield" | "loaded_dice" | "magnet") => {

@@ -366,12 +366,25 @@ function pushPrize(player: Player, bonus: NonNullable<Player["activeBonus"]>): v
 
 function markPrizeRedeemed(player: Player, label: string): void {
   if (!player.prizeLog) return;
-  const open = [...player.prizeLog].reverse().find((r) => !r.redeemed);
+  const open = [...player.prizeLog].reverse().find((r) => {
+    if (r.redeemed) return false;
+    if (!label) return true;
+    return r.extra === label || r.name === label;
+  }) || [...player.prizeLog].reverse().find((r) => !r.redeemed);
   if (open) {
     open.redeemed = true;
     open.redeemedAt = Date.now();
     if (label) open.extra = open.extra || label;
   }
+}
+
+function consumePlayerBonus(player: Player): string | null {
+  if (!player.activeBonus) return null;
+  const used = player.activeBonus;
+  const label = used.extra || used.name;
+  markPrizeRedeemed(player, label);
+  player.activeBonus = null;
+  return label;
 }
 
 /**
@@ -503,7 +516,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-01.2";
+const SERVER_BUILD = "2026-11-01.4";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1038,31 +1051,10 @@ function approveTurn(
     };
   }
 
-  // Prize control: an unused bonus blocks the next roll until an admin
-  // confirms it was redeemed.
-  if (player.activeBonus && !confirmBonusUse) {
-    const label = player.activeBonus.extra || player.activeBonus.name;
-    return {
-      ok: false,
-      error:
-        `⚠️ Нельзя одобрить ход! У игрока ${player.name} есть неиспользованный бонус ` +
-        `(${label}). Подтвердите его использование перед одобрением.`,
-      player,
-    };
-  }
-
+  // Prize is recorded for the shop; it must not freeze the board.
+  // Admin can still mark it redeemed from the console.
   if (player.activeBonus && confirmBonusUse) {
-    const usedBonus = player.activeBonus;
-    markPrizeRedeemed(player, usedBonus.extra || usedBonus.name);
-    player.activeBonus = null;
-    addLog({
-      id: "bonus_use_" + Date.now(),
-      message:
-        `✅ Подтверждено использование бонуса "${usedBonus.extra || usedBonus.name}" ` +
-        `игроком ${player.name} в реальной жизни. Бонус списан.`,
-      timestamp: new Date().toLocaleTimeString(),
-      type: "admin",
-    });
+    consumePlayerBonus(player);
   }
 
   /*
@@ -2665,6 +2657,35 @@ async function start() {
     });
   });
 
+  app.post("/api/admin/consume-bonus", (req, res) => {
+    const token =
+      (typeof req.headers.authorization === "string"
+        ? req.headers.authorization.replace(/^Bearer\s+/i, "")
+        : "") ||
+      (req.body && req.body.token) ||
+      "";
+    const session = verifySessionToken(token);
+    if (!session || session.role !== "admin") {
+      return res.status(403).json({ error: "Списать бонус может только администратор." });
+    }
+    const needle = String((req.body && (req.body.playerId || req.body.pId)) || "");
+    const player = gameState.players.find(
+      (p) => p.id === needle || p.name === needle || p.alias === needle
+    );
+    if (!player) return res.status(404).json({ error: "Игрок не найден." });
+    const label = consumePlayerBonus(player);
+    if (!label) return res.status(400).json({ error: "Нет активного бонуса." });
+    addLog({
+      id: "bonus_consume_" + Date.now(),
+      message: `✅ Администратор списал бонус "${label}" игрока ${shownName(player)}.`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: "admin",
+    });
+    saveState();
+    broadcastState();
+    return res.json({ success: true, playerId: player.id, label });
+  });
+
   app.get("/api/admin/player-prizes", requireInternalAuth, (req, res) => {
     const raw = typeof req.query.target === "string" ? req.query.target : "";
     const parsed = validate(botPlayerHistorySchema, { target: raw || " " });
@@ -3104,23 +3125,7 @@ async function start() {
        */
       // Missing batch stamp must NOT mean "bonus is older than now" — that
       // blocked every roll after any prize. Unknown start = treat as in-batch.
-      const approvalStartedAt = player.turnBatchStartedAt ?? 0;
-      const bonusPredatesBatch =
-        !!player.activeBonus &&
-        !!player.turnBatchStartedAt &&
-        player.activeBonus.receivedAt < approvalStartedAt;
-
-      if (player.activeBonus && bonusPredatesBatch && !isAdminOrTest) {
-        log.warn("roll:request rejected: unused bonus", {
-          player: player.name,
-          bonus: player.activeBonus.name,
-        });
-        socket.emit(
-          "error",
-          `⚠️ СИСТЕМА КОНТРОЛЯ ПРИЗОВ: Вы не можете сделать следующий бросок, пока не использовали текущий бонус (${player.activeBonus.extra || player.activeBonus.name}) в Таблице Жизни! Дождитесь подтверждения от администратора.`
-        );
-        return;
-      }
+      // Unredeemed shop prize no longer blocks an approved roll.
 
       // Handle Skip Next Turn Penalty directly
       if (player.skipNextTurn && !isAdminOrTest) {
@@ -4243,12 +4248,14 @@ async function start() {
     });
 
     // Admin explicitly consumes/redeems a player's active bonus
-    socket.on("admin:consume_bonus", (pId: string) => {
+    socket.on("admin:consume_bonus", (raw: unknown) => {
       if (!isAdmin) {
         socket.emit("error", "Списать бонус может только администратор.");
         return;
       }
-      const needle = String(pId || "");
+      const needle = String(
+        typeof raw === "string" ? raw : (raw as { playerId?: string })?.playerId || ""
+      );
       const player = gameState.players.find(
         (p) => p.id === needle || p.name === needle || p.alias === needle
       );
@@ -4256,14 +4263,13 @@ async function start() {
         socket.emit("error", "Игрок для списания бонуса не найден.");
         return;
       }
-      if (!player.activeBonus) {
+      const label = consumePlayerBonus(player);
+      if (!label) {
         socket.emit("error", "У этого игрока нет активного бонуса.");
         return;
       }
-      if (player && player.activeBonus) {
-        const usedBonus = player.activeBonus;
-        markPrizeRedeemed(player, usedBonus.extra || usedBonus.name);
-        player.activeBonus = null;
+      if (label) {
+        const usedBonus = { extra: label, name: label };
 
         addLog({
           id: "bonus_consume_" + Date.now(),
@@ -4279,6 +4285,7 @@ async function start() {
           );
         }
 
+        socket.emit("admin:bonus_consumed", { playerId: player.id, label });
         saveState();
         broadcastState();
       }
