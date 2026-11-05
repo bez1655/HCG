@@ -7,6 +7,7 @@
  * redeploy. Every write here goes to a temporary file and is then renamed,
  * which is atomic on POSIX filesystems.
  */
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger, errorContext } from "../utils/logger";
@@ -20,7 +21,7 @@ const log = createLogger("Storage");
  *             process may exit before an async callback fires.
  */
 export function atomicWrite(file: string, contents: string, sync = false): Promise<void> | void {
-  const tmp = `${file}.tmp`;
+  const tmp = `${file}.tmp.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString("hex")}`;
 
   if (sync) {
     try {
@@ -28,6 +29,9 @@ export function atomicWrite(file: string, contents: string, sync = false): Promi
       fs.renameSync(tmp, file);
     } catch (err) {
       log.error("Failed to write file", { file: path.basename(file), ...errorContext(err) });
+      try {
+        if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+      } catch {}
     }
     return;
   }
@@ -47,6 +51,7 @@ export function atomicWrite(file: string, contents: string, sync = false): Promi
             file: path.basename(file),
             ...errorContext(renameErr),
           });
+          fs.unlink(tmp, () => {});
         }
         resolve();
       });

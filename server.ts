@@ -2591,6 +2591,8 @@ async function start() {
       } catch {
         failed.push(shownName(player));
       }
+      // Задержка 40мс (~25 сообщ./сек) для строгого соблюдения лимитов Telegram Bot API (30 msg/sec)
+      await new Promise((resolve) => setTimeout(resolve, 40));
     }
 
     addLog({
@@ -2832,6 +2834,15 @@ async function start() {
     }
   );
 
+  // Global Express error handler to prevent internal stack traces leaking to clients
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    log.error("Express unhandled error", errorContext(err));
+    const status = typeof err.status === "number" ? err.status : 400;
+    res.status(status).json({
+      error: err.type === "entity.parse.failed" ? "Некорректный JSON в теле запроса" : (err.message || "Ошибка сервера"),
+    });
+  });
+
   // Socket communication
   // Authenticate every socket during the handshake. The identity comes from a
   // signed session token issued by /api/login, never from a client-supplied id.
@@ -2845,6 +2856,69 @@ async function start() {
     socket.data.role = session.role;
     next();
   });
+
+  function triggerPlayerVictory(player: Player, feverActive = false): NonNullable<Player["activeBonus"]> {
+    player.cell = 64;
+    const bonusName = "МЕГА-КРИСТАЛЛ";
+    let grandValue = 13800;
+    let grandDesc = "Главный приз: МЕГА-КРИСТАЛЛ";
+    if (feverActive) {
+      grandValue *= 2;
+      grandDesc += " • 🔥 УДВОЕНО В РЕЖИМЕ FEVER!";
+    }
+    const bonus: NonNullable<Player["activeBonus"]> = {
+      name: bonusName,
+      extra: "МЕГА-КРИСТАЛЛ",
+      description: grandDesc,
+      value: grandValue,
+      cellId: 64,
+      receivedAt: Date.now(),
+    };
+    player.activeBonus = bonus;
+    pushPrize(player, bonus);
+
+    player.lapsCompleted = (player.lapsCompleted || 0) + 1;
+    pushPrize(player, {
+      name: "Ключ ядра",
+      extra: `КРУГ ${player.lapsCompleted}`,
+      description: "Полный проход поля. Можно начать новый круг, инвентарь сохранится.",
+      value: 0,
+      cellId: 64,
+      receivedAt: Date.now(),
+    });
+
+    addLog({
+      id: "win_" + Date.now(),
+      message: `🏆 ЯДРО СЕТИ. ${shownName(player)} закрыл круг ${player.lapsCompleted}. Приз: ${bonusName}${feverActive ? " (🔥 x2 FEVER!)" : ""}. Можно начать новый круг — фишка на старт, девайсы остаются.`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: "system",
+    });
+
+    io.emit("event:trigger", {
+      title: "ЯДРО СЕТИ",
+      description: `${shownName(player)} прошёл поле (круг ${player.lapsCompleted}). Главный приз в кабинете. Новый круг: фишка на клетку 0, щиты и кубики остаются.`,
+      playerName: shownName(player),
+      type: "win",
+      playerId: player.id,
+    });
+
+    io.emit("toast:achievement", {
+      title: "ПОЛНЫЙ ЦИКЛ",
+      message: `${shownName(player)} завершил круг!`,
+      icon: "🏆",
+      type: "lap",
+    });
+
+    const winMsg = `🏆 <b>КИБЕР-ПОБЕДИТЕЛЬ!</b> Игрок <b>${escapeHtml(player.name)}</b> дошел до финала и забрал главный приз: ${escapeHtml(bonusName)}${feverActive ? " (Удвоено в режиме FEVER: 27600₽!)" : ""}!`;
+    void sendTelegramMessageToAdmin(winMsg);
+    if (player.telegramId || player.name) {
+      sendTelegramMessage(
+        player.telegramId || player.name,
+        `🏆 <b>ПОБЕДА!</b> Вы дошли до финала и забрали главный приз: МЕГА-КРИСТАЛЛ!${feverActive ? "\n🔥 Награда удвоена в режиме лихорадки!" : ""}`
+      );
+    }
+    return bonus;
+  }
 
   io.on("connection", (socket) => {
     const authPlayerId: string = socket.data.playerId;
@@ -3357,71 +3431,12 @@ async function start() {
 
       // Check if finished or landed on prize
       if (player.cell >= 64) {
-        player.cell = 64;
-        const bonusName = "МЕГА-КРИСТАЛЛ";
-        const hadOldBonus = !!player.activeBonus;
         const previousBonus = player.activeBonus ?? null;
-        player.activeBonus = {
-          name: bonusName,
-          extra: "МЕГА-КРИСТАЛЛ",
-          description: "Главный приз: МЕГА-КРИСТАЛЛ",
-          value: 13800,
-          cellId: 64,
-          receivedAt: Date.now(),
-        };
-        pushPrize(player, player.activeBonus);
+        const victoryBonus = triggerPlayerVictory(player, feverActive);
 
         report.finished = true;
-        report.awardedBonus = player.activeBonus;
+        report.awardedBonus = victoryBonus;
         report.replacedBonus = previousBonus;
-
-        player.lapsCompleted = (player.lapsCompleted || 0) + 1;
-        pushPrize(player, {
-          name: "Ключ ядра",
-          extra: `КРУГ ${player.lapsCompleted}`,
-          description: "Полный проход поля. Можно начать новый круг, инвентарь сохранится.",
-          value: 0,
-          cellId: 64,
-          receivedAt: Date.now(),
-        });
-
-        addLog({
-          id: "win_" + Date.now(),
-          message: `🏆 ЯДРО СЕТИ. ${shownName(player)} закрыл круг ${player.lapsCompleted}. Приз: ${bonusName}. Можно начать новый круг — фишка на старт, девайсы остаются.`,
-          timestamp: new Date().toLocaleTimeString(),
-          type: "system",
-        });
-
-        io.emit("event:trigger", {
-          title: "ЯДРО СЕТИ",
-          description: `${shownName(player)} прошёл поле (круг ${player.lapsCompleted}). Главный приз в кабинете. Новый круг: фишка на клетку 0, щиты и кубики остаются.`,
-          playerName: shownName(player),
-          type: "win",
-          playerId: player.id,
-        });
-
-        io.emit("toast:achievement", {
-          title: "ПОЛНЫЙ ЦИКЛ",
-          message: `${shownName(player)} завершил круг!`,
-          icon: "🏆",
-          type: "lap",
-        });
-
-        /*
-         * Только администратору, не в общий чат.
-         *
-         * Игрок не должен узнавать о чужих призах и победах: это его личное
-         * дело с магазином. Раньше сообщение уходило в группу, где сидят все
-         * участники сразу.
-         */
-        const winMsg = `🏆 <b>КИБЕР-ПОБЕДИТЕЛЬ!</b> Игрок <b>${escapeHtml(player.name)}</b> дошел до финала и забрал главный приз: ${escapeHtml(bonusName)}!`;
-        void sendTelegramMessageToAdmin(winMsg);
-        if (player.telegramId || player.name) {
-          sendTelegramMessage(
-            player.telegramId || player.name,
-            `🏆 <b>ПОБЕДА!</b> Вы дошли до финала и забрали главный приз: МЕГА-КРИСТАЛЛ!`
-          );
-        }
       } else if (
         bonusText &&
         cell &&
@@ -3445,10 +3460,9 @@ async function start() {
         });
 
         if (cell.type === CellType.FLASK || cell.type === CellType.BITCOIN) {
-          const bonusName = cell.extra || cell.name;
           const hadOldBonus = !!player.activeBonus;
           const previousBonus = player.activeBonus ?? null;
-          player.activeBonus = {
+          const bonusObj: NonNullable<Player["activeBonus"]> = outcome.awardedBonus || {
             name: cell.name,
             extra: cell.extra || "",
             description: cell.description,
@@ -3456,19 +3470,20 @@ async function start() {
             cellId: cell.id,
             receivedAt: Date.now(),
           };
+          player.activeBonus = bonusObj;
+          const bonusName = bonusObj.extra || bonusObj.name;
           pushPrize(player, player.activeBonus);
 
           report.awardedBonus = player.activeBonus;
           report.replacedBonus = previousBonus;
 
-          // Выдача приза — дело администратора, остальным игрокам знать
-          // о чужой награде незачем.
+          const bonusDesc = bonusObj.description || cell.description;
           const prizeMsg = `🎉 Игрок <b>${escapeHtml(player.name)}</b> получил награду: ${escapeHtml(bonusName)}!${hadOldBonus ? " <i>(Предыдущий бонус заменен, призы не суммируются)</i>" : ""}`;
           void sendTelegramMessageToAdmin(prizeMsg);
           if (player.telegramId || player.name) {
             sendTelegramMessage(
               player.telegramId || player.name,
-              `Поздравляем! Вы получили награду: <b>${escapeHtml(bonusName)}</b>!\n<i>${escapeHtml(cell.description)}</i>`
+              `Поздравляем! Вы получили награду: <b>${escapeHtml(bonusName)}</b>!\n<i>${escapeHtml(bonusDesc)}</i>`
             );
           }
 
@@ -3603,6 +3618,40 @@ async function start() {
         const jump = chosen.value || 2;
         player.cell = Math.min(64, player.cell + jump);
         resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Ускорение на +${jump} кл.!`;
+        if (player.cell >= 64) {
+          triggerPlayerVictory(player, false);
+        } else {
+          const landed = gameState.cells.find((c) => c.id === player.cell);
+          if (landed && (landed.type === CellType.FLASK || landed.type === CellType.BITCOIN)) {
+            const hadOldBonus = !!player.activeBonus;
+            const bonusObj: NonNullable<Player["activeBonus"]> = {
+              name: landed.name,
+              extra: landed.extra || "",
+              description: landed.description,
+              value: landed.value,
+              cellId: landed.id,
+              receivedAt: Date.now(),
+            };
+            player.activeBonus = bonusObj;
+            const bonusName = bonusObj.extra || bonusObj.name;
+            pushPrize(player, player.activeBonus);
+            io.emit("event:trigger", {
+              title: landed.name,
+              description: landed.description,
+              playerName: shownName(player),
+              type: landed.type,
+              playerId: player.id,
+            });
+            const prizeMsg = `🎉 Игрок <b>${escapeHtml(player.name)}</b> получил награду: ${escapeHtml(bonusName)}!${hadOldBonus ? " <i>(Предыдущий бонус заменен, призы не суммируются)</i>" : ""}`;
+            void sendTelegramMessageToAdmin(prizeMsg);
+            if (player.telegramId || player.name) {
+              sendTelegramMessage(
+                player.telegramId || player.name,
+                `Поздравляем! Вы получили награду: <b>${escapeHtml(bonusName)}</b>!\n<i>${escapeHtml(landed.description)}</i>`
+              );
+            }
+          }
+        }
       } else if (chosen.type === "promo") {
         const prizeRecord: PrizeRecord = {
           at: Date.now(),
@@ -3931,6 +3980,10 @@ async function start() {
       const targetId = isAdmin && typeof pId === "string" && pId ? pId : authPlayerId;
       const player = gameState.players.find((p) => p.id === targetId);
       if (player) {
+        if (!isAdmin && player.cell < 64) {
+          socket.emit("error", "Начать новый круг можно только после достижения финиша (клетка 64).");
+          return;
+        }
         const fromLap = player.cell;
         player.cell = 0;
         player.skipNextTurn = false;

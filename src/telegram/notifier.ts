@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { telegram as telegramConfig } from "../config/env";
+import { atomicWrite } from "../persistence/files";
 import { createLogger, errorContext } from "../utils/logger";
 import { callTelegram } from "./transport";
 
@@ -60,27 +61,7 @@ export function rememberUser(username: string, chatId: number): boolean {
 export function persist(sync = false): void {
   if (!usersFile) return;
   const contents = JSON.stringify(telegramUsers, null, 2);
-  const tmp = `${usersFile}.tmp`;
-
-  if (sync) {
-    try {
-      fs.writeFileSync(tmp, contents, "utf-8");
-      fs.renameSync(tmp, usersFile);
-    } catch (err) {
-      log.error("Failed to persist telegram_users.json", errorContext(err));
-    }
-    return;
-  }
-
-  fs.writeFile(tmp, contents, "utf-8", (err) => {
-    if (err) {
-      log.error("Failed to persist telegram_users.json", errorContext(err));
-      return;
-    }
-    fs.rename(tmp, usersFile, (renameErr) => {
-      if (renameErr) log.error("Failed to replace telegram_users.json", errorContext(renameErr));
-    });
-  });
+  atomicWrite(usersFile, contents, sync);
 }
 
 /**
