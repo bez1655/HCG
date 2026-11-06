@@ -49,9 +49,11 @@ export interface Player {
    * купивший товар, больше не раскрывает свой аккаунт другим участникам.
    */
   alias?: string;
-  /** Previous public alias, kept after the Halloween rename. */
+  /** Previous public alias, kept after rename. */
   previousAlias?: string;
-  /** Horror name reserved until the player next opens the game. */
+  /** Movie character name reserved until the player next opens the game. */
+  pendingMovieAlias?: string;
+  /** Legacy field for pending alias migration. */
   pendingHorrorAlias?: string;
   role: "admin" | "player";
   cell: number;

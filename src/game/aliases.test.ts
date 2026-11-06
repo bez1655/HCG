@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isHorrorAlias } from "./aliases";
+import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isMovieAlias, isHorrorAlias } from "./aliases";
 
 /**
  * Псевдонимы закрывают Telegram-хендл игрока от остальных участников.
@@ -8,9 +8,10 @@ import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isHorrorAlias } fro
  * игрокам НИ ПРИ КАКИХ обстоятельствах — включая случай, когда герои
  * кончились или запись пришла из старого состояния без псевдонима.
  */
-describe("список псевдонимов", () => {
-  it("достаточно длинный для реальной партии", () => {
-    expect(ALIAS_POOL.length).toBeGreaterThanOrEqual(100);
+describe("список псевдонимов персонажей кино", () => {
+  it("содержит от 150 до 200 уникальных имен культовых персонажей", () => {
+    expect(ALIAS_POOL.length).toBeGreaterThanOrEqual(150);
+    expect(ALIAS_POOL.length).toBeLessThanOrEqual(200);
   });
 
   it("не содержит повторов", () => {
@@ -22,8 +23,8 @@ describe("список псевдонимов", () => {
     expect(ALIAS_POOL.filter((a) => a.includes("@"))).toEqual([]);
   });
 
-  it("собран из хоррор-вселенных", () => {
-    for (const hero of ["Майкл Майерс", "Фредди Крюгер", "Пеннивайз", "Рипли", "Джигсо"]) {
+  it("собран из популярных киногероев", () => {
+    for (const hero of ["Нео", "Джон Уик", "Терминатор", "Бэтмен", "Джек Воробей", "Арагорн", "Джеймс Бонд"]) {
       expect(ALIAS_POOL).toContain(hero);
     }
   });
@@ -44,8 +45,8 @@ describe("выдача псевдонима", () => {
   });
 
   it("не считает занятым имя в другом регистре", () => {
-    const alias = pickAlias(["майкл майерс"]);
-    expect(alias.toLowerCase()).not.toBe("майкл майерс");
+    const alias = pickAlias(["нео"]);
+    expect(alias.toLowerCase()).not.toBe("нео");
   });
 
   it("продолжает выдавать имена, когда весь список исчерпан", () => {
@@ -66,10 +67,13 @@ describe("выдача псевдонима", () => {
     }
   });
 
-  it("recognises horror pool names", () => {
-    expect(isHorrorAlias("Пеннивайз")).toBe(true);
-    expect(isHorrorAlias("Пеннивайз 2")).toBe(true);
-    expect(isHorrorAlias("Шторм")).toBe(false);
+  it("распознает имена киногероев и суффиксы", () => {
+    expect(isMovieAlias("Нео")).toBe(true);
+    expect(isMovieAlias("Нео 2")).toBe(true);
+    expect(isMovieAlias("Джон Уик 3")).toBe(true);
+    expect(isMovieAlias("НеизвестныйГерой123")).toBe(false);
+    // Обратная совместимость с isHorrorAlias
+    expect(isHorrorAlias("Бэтмен")).toBe(true);
   });
 
   it("уважает переданный источник случайности", () => {

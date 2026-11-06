@@ -12,7 +12,7 @@ import { atomicWrite, ensureDir } from "./src/persistence/files";
 import { choosePersistedState } from "./src/persistence/chooseState";
 import { resolveMove, isMilestone, generateDropBoxOptions, isDropBoxCell } from "./src/game/rules";
 import { getSkinBySrc } from "./src/game/skins";
-import { pickAlias, publicName, isHorrorAlias, takenHorrorNames } from "./src/game/aliases";
+import { pickAlias, publicName, isMovieAlias, isHorrorAlias, takenMovieNames, takenHorrorNames } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
 import {
   applyTelegramHandle,
@@ -302,55 +302,69 @@ function maskPlayer(p: Player): Player {
   delete masked.previousHandles;
   delete masked.previousAlias;
   delete masked.pendingHorrorAlias;
+  delete masked.pendingMovieAlias;
   delete masked.prizeLog;
   delete masked.lastTurnReminderAt;
   return masked;
 }
 
 
-function reserveHorrorAliases(): void {
+function reserveMovieAliases(): void {
   let added = 0;
   for (const p of gameState.players) {
     if (p.role !== "player") continue;
-    if (isHorrorAlias(p.alias)) {
+    // Если у игрока уже есть псевдоним из пула киногероев — ничего не меняем
+    if (isMovieAlias(p.alias)) {
+      if (p.pendingMovieAlias) delete p.pendingMovieAlias;
       if (p.pendingHorrorAlias) delete p.pendingHorrorAlias;
       continue;
     }
-    if (p.pendingHorrorAlias && isHorrorAlias(p.pendingHorrorAlias)) continue;
-    p.pendingHorrorAlias = pickAlias(takenHorrorNames(gameState.players));
+    // Если уже зарезервирован киногерой — оставляем
+    if (p.pendingMovieAlias && isMovieAlias(p.pendingMovieAlias)) continue;
+    if (p.pendingHorrorAlias && isMovieAlias(p.pendingHorrorAlias)) {
+      p.pendingMovieAlias = p.pendingHorrorAlias;
+      delete p.pendingHorrorAlias;
+      continue;
+    }
+    p.pendingMovieAlias = pickAlias(takenMovieNames(gameState.players));
+    delete p.pendingHorrorAlias;
     added += 1;
   }
   if (added) {
-    log.info("Reserved horror aliases", { added });
+    log.info("Reserved movie character aliases", { added });
     saveState();
   }
 }
 
-function applyPendingHorrorAlias(player: Player): { from: string; to: string } | null {
-  const next = player.pendingHorrorAlias?.trim();
+function applyPendingMovieAlias(player: Player): { from: string; to: string } | null {
+  const next = (player.pendingMovieAlias || player.pendingHorrorAlias)?.trim();
   if (!next) return null;
   const from = player.alias || publicName(player);
   player.previousAlias = player.alias;
   player.alias = next;
+  delete player.pendingMovieAlias;
   delete player.pendingHorrorAlias;
   void sendTelegramMessage(
     player.telegramId || player.name,
-    `🎃 <b>Хеллоуин в Hapstore</b>
+    `🎬 <b>Кино-сезон в Hapstore</b>
 
-Ваш игровой псевдоним сменился.
+Ваш игровой псевдоним обновлён на культового персонажа кино.
 Было: <b>${escapeHtml(from)}</b>
 Стало: <b>${escapeHtml(next)}</b>
 
 На доске вас теперь видят как «${escapeHtml(next)}».`
   );
   void sendTelegramMessageToAdmin(
-    `🎃 Смена псевдонима
+    `🎬 Смена псевдонима (Киногерои)
 ${escapeHtml(from)} → <b>${escapeHtml(next)}</b>
 ${escapeHtml(player.name)}`
   );
-  log.info("Horror alias applied", { player: player.id, from, to: next });
+  log.info("Movie character alias applied", { player: player.id, from, to: next });
   return { from, to: next };
 }
+
+const reserveHorrorAliases = reserveMovieAliases;
+const applyPendingHorrorAlias = applyPendingMovieAlias;
 
 
 function pushPrize(player: Player, bonus: NonNullable<Player["activeBonus"]>): void {
@@ -516,7 +530,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-01.4";
+const SERVER_BUILD = "2026-11-06.1";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1559,7 +1573,7 @@ async function start() {
   }
 
   hydrateTurnJournal();
-  reserveHorrorAliases();
+  reserveMovieAliases();
 
   // Load auth passwords from Firestore first, fallback to local file
   let loadedAuthFromFirestore = false;
@@ -2355,7 +2369,7 @@ async function start() {
       // Отметка присутствия: по ней фишка остаётся на доске.
       player.lastSeenAt = Date.now();
       if (handle) applyTelegramHandle(gameState.players, player, handle);
-      applyPendingHorrorAlias(player);
+      applyPendingMovieAlias(player);
       if (!player.chipImage) player.chipImage = getRandomChipImage(takenChips());
       if (parsed.data.color) player.color = parsed.data.color;
 
@@ -2811,7 +2825,7 @@ async function start() {
         }
         existingPlayer.isOnline = true;
         existingPlayer.lastSeenAt = Date.now();
-        applyPendingHorrorAlias(existingPlayer);
+        applyPendingMovieAlias(existingPlayer);
         if (!existingPlayer.chipImage) {
           existingPlayer.chipImage = getRandomChipImage(takenChips());
         }
@@ -2966,7 +2980,7 @@ async function start() {
       const connected = gameState.players.find((pl) => pl.id === authPlayerId);
       if (connected) {
         connected.lastSeenAt = Date.now();
-        if (applyPendingHorrorAlias(connected)) {
+        if (applyPendingMovieAlias(connected)) {
           saveState();
         }
         broadcastSlices("players");

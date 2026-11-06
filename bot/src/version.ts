@@ -8,8 +8,10 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-11-01.4";
+export const BUILD = "2026-11-06.1";
 export const FEATURES = [
+  "movie character aliases (195 popular film heroes)",
+  "movie character alias swap on login",
   "inventory shield dice magnet, fever, drop boxes, skins, gifts, haptics",
   "board FPS: no ambient blur, no particle canvas, eco default on phones",
   "neon magnet prize attractor and luck streak fever mode x2",
@@ -18,8 +20,6 @@ export const FEATURES = [
   "cyber-inventory (shield firewall and loaded dice chips)",
   "cyber-drop 3-box interactive choice",
   "tactile telegram haptic feedback and token neon trails",
-  "horror alias swap on next login",
-  "halloween chips and horror aliases",
   "turn request journal",
   "public origin hapstore.cyber-game.online",
   "login is current @ only, cannot type someone else's handle",
