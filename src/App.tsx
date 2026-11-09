@@ -732,8 +732,8 @@ export default function App() {
       <div className="h-[100dvh] w-full bg-[#060412] text-white flex items-center justify-center overflow-hidden">
         <div className="relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black overflow-hidden">
           <video
-            src="/Splash.mp4?v=13"
-            poster="/Splash.png?v=13"
+            src="/Splash.mp4?v=14"
+            poster="/Splash.png?v=14"
             autoPlay
             loop
             muted

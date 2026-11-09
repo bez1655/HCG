@@ -1092,20 +1092,20 @@ export default function BoardView({
           {/* Background Map: Video with GPU acceleration or Static Image in Eco Mode */}
           {ecoMode ? (
             <img
-              src="/BoardHAP.png?v=13"
+              src="/BoardHAP.png?v=14"
               alt="Игровое поле"
               className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
             />
           ) : (
             <video
               ref={boardVideoRef}
-              src="/BoardHAP.mp4?v=13"
+              src="/BoardHAP.mp4?v=14"
               autoPlay
               loop
               muted
               playsInline
               preload="metadata"
-              poster="/BoardHAP.png?v=13"
+              poster="/BoardHAP.png?v=14"
               disablePictureInPicture
               disableRemotePlayback
               className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 [transform:translateZ(0)]"
@@ -1352,7 +1352,7 @@ export default function BoardView({
                 }`}
               >
                 <img
-                  src="/Dice.png?v=13"
+                  src="/Dice.png?v=14"
                   alt="Dice"
                   className="w-[44px] h-[44px] object-contain filter drop-shadow-[0_0_10px_rgba(255,122,24,0.85)]"
                   style={{ width: "44px", height: "44px" }}

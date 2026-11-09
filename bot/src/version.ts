@@ -8,7 +8,7 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-11-08.8";
+export const BUILD = "2026-11-08.9";
 export const FEATURES = [
   "bot /start /help /hero in Russian: 1 purchase = 1 turn, boss 63, shop finish 64",
   "tabletop RPG cards on cells 6/10/16/20/26/32/36/44/48/50/58/63, finish 64 shop only",

@@ -223,7 +223,7 @@ export default function DiceRoll({ result, onDone }: DiceRollProps) {
       <div className="hcg-dice-stage">
         {landed && <div className="hcg-dice-ring" />}
         <img
-          src="/Dice.png?v=13"
+          src="/Dice.png?v=14"
           alt=""
           draggable={false}
           className={`hcg-dice-img ${landed ? "is-landed" : "is-spinning"}`}

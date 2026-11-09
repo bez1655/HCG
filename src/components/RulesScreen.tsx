@@ -14,7 +14,7 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
     (pathOf(backgroundUrl).endsWith(".mp4") ||
       pathOf(backgroundUrl).endsWith(".mov") ||
       backgroundUrl.startsWith("data:video"));
-  const bg = customIsVideo ? backgroundUrl! : "/RulesHAP.mp4?v=13";
+  const bg = customIsVideo ? backgroundUrl! : "/RulesHAP.mp4?v=14";
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
 
   React.useEffect(() => bindVideoSoundtrack(videoRef.current), [bg]);
@@ -54,7 +54,7 @@ export default function RulesScreen({ backgroundUrl, onProceed }: RulesScreenPro
               src={bg}
               autoPlay
               playsInline
-              poster="/RulesHAP.png?v=13"
+              poster="/RulesHAP.png?v=14"
               className="absolute inset-0 w-full h-full object-cover z-0"
             />
             <div className="absolute bottom-[2%] left-0 right-0 z-50 flex justify-center pointer-events-none">
