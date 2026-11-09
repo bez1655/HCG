@@ -32,7 +32,8 @@ export type InitDataResult =
   | { ok: false; error: string; user?: undefined; authDate?: undefined };
 
 /** Default freshness window. Telegram recommends rejecting stale payloads. */
-export const INIT_DATA_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** Mini App WebViews often reuse initData older than a day. 7 days still rejects ancient payloads. */
+export const INIT_DATA_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Verify a raw `window.Telegram.WebApp.initData` string.

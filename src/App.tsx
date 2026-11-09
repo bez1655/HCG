@@ -196,8 +196,7 @@ export default function App() {
           return;
         }
 
-        // Anything else (bad signature, misconfigured server): fall back to a
-        // stored session if there is one, otherwise the login form.
+        if (data?.error) setLoginNotice(String(data.error));
         restoreCachedSession();
       } catch {
         clearTimeout(timer);

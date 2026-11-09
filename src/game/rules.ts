@@ -16,6 +16,14 @@ import { Cell, CellType, Player, ActiveBonus, DropBoxOption } from "../types";
 export const FINAL_CELL = 64;
 export const GRAND_PRIZE_VALUE = 13800;
 
+/** Board index 0..63 for movement. 64+ means the last lap is done — start from 0. */
+export function startCellForMove(cell: unknown): number {
+  const n = typeof cell === "number" ? cell : Number(cell);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n >= FINAL_CELL) return 0;
+  return Math.floor(n);
+}
+
 /** Клетки, на которых активируется выбор из 3 кейсов Кибер-дропа */
 export const DROP_BOX_CELL_IDS = [12, 28, 42, 53];
 
@@ -71,7 +79,8 @@ export function resolveMove(
   cells: Cell[],
   options?: { shieldActive?: boolean; magnetActive?: boolean; feverActive?: boolean }
 ): MoveOutcome {
-  const landedCell = Math.min(FINAL_CELL, player.cell + steps);
+  const from = startCellForMove(player.cell);
+  const landedCell = Math.min(FINAL_CELL, from + steps);
   let cell = cells.find((c) => c.id === landedCell);
 
   let finalCell = landedCell;
@@ -130,7 +139,7 @@ export function resolveMove(
     }
   }
 
-  const finished = finalCell >= FINAL_CELL;
+  const finished = from < FINAL_CELL && finalCell >= FINAL_CELL;
   const isDropBox = isDropBoxCell(finalCell);
 
   let awardedBonus: ActiveBonus | null = null;

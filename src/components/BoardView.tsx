@@ -337,6 +337,7 @@ export default function BoardView({
   // answers with its authoritative result (see the effect below).
   const handleRoll = () => {
     if (isRolling) return;
+    setIsRolling(true);
     console.info(
       "[HCG] Отправляю roll:request",
       selectedItem ? `с предметом ${selectedItem}` : "без предметов",

@@ -47,6 +47,19 @@ describe("resolveMove — basic movement", () => {
     expect(r.finalCell).toBe(FINAL_CELL);
     expect(r.finished).toBe(true);
   });
+
+  it("starts a new lap from cell 0 if the token is already on 64", () => {
+    const r = resolveMove(player(64), 3, makeBoard());
+    expect(r.landedCell).toBe(3);
+    expect(r.finalCell).toBe(3);
+    expect(r.finished).toBe(false);
+  });
+
+  it("treats a string cell 64 as a finished lap", () => {
+    const r = resolveMove({ cell: "64" as unknown as number, name: "@tester" }, 2, makeBoard());
+    expect(r.finalCell).toBe(2);
+    expect(r.finished).toBe(false);
+  });
 });
 
 describe("resolveMove — bonus cells", () => {

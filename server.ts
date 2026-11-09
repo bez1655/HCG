@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword, escapeHtml, generatePassword } from "./sr
 import * as firestore from "./src/persistence/firestore";
 import { atomicWrite, ensureDir } from "./src/persistence/files";
 import { choosePersistedState } from "./src/persistence/chooseState";
-import { resolveMove, isMilestone, generateDropBoxOptions, isDropBoxCell } from "./src/game/rules";
+import { resolveMove, isMilestone, generateDropBoxOptions, isDropBoxCell, startCellForMove } from "./src/game/rules";
 import {
   ensurePlayerRpg,
   beginEncounter,
@@ -545,7 +545,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-08.12";
+const SERVER_BUILD = "2026-11-08.16";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1362,6 +1362,9 @@ function saveCalibration() {
 }
 
 // Loaded or fallback state
+/** Prevents a double-tap from resolving the same cell twice. */
+const rollLocks = new Set<string>();
+
 let gameState: GameState = {
   schemaVersion: SCHEMA_VERSION,
   players: [],
@@ -2367,14 +2370,8 @@ async function start() {
       const { id: tgId, username } = verified.user;
       const handle = username ? normaliseHandle(username) : null;
 
-      // Numeric id is the stable identity; the handle is only a fallback for
-      // players registered before the binding existed.
-      let player = gameState.players.find((p) => p.telegramId === tgId);
-      if (!player && handle) {
-        player = gameState.players.find((p) => p.name.toLowerCase() === handle);
-        // Bind on first successful match so later logins skip the fallback.
-        if (player) player.telegramId = tgId;
-      }
+      let player = findPlayerByTelegram(gameState.players, { telegramId: tgId, handle });
+      if (player && !player.telegramId) player.telegramId = tgId;
 
       const telegramAdmin = isTelegramAdminHandle(handle, DATA_DIR, telegramConfig.adminUsername);
 
@@ -2398,15 +2395,17 @@ async function start() {
       }
 
       player.isOnline = true;
-      // Отметка присутствия: по ней фишка остаётся на доске.
       player.lastSeenAt = Date.now();
-      if (handle) applyTelegramHandle(gameState.players, player, handle);
-      applyPendingHorrorAlias(player);
-      if (!player.chipImage) player.chipImage = getRandomChipImage(takenChips());
-      if (parsed.data.color) player.color = parsed.data.color;
-
-      saveState();
-      broadcastSlices("players");
+      try {
+        if (handle) applyTelegramHandle(gameState.players, player, handle);
+        applyPendingHorrorAlias(player);
+        if (!player.chipImage) player.chipImage = getRandomChipImage(takenChips());
+        if (parsed.data.color) player.color = parsed.data.color;
+        saveState();
+        broadcastSlices("players");
+      } catch (err) {
+        log.error("telegram auth post-login failed", { error: String(err) });
+      }
 
       const sessionRole: "admin" | "player" =
         telegramAdmin || player.role === "admin" ? "admin" : "player";
@@ -2817,18 +2816,25 @@ async function start() {
         ? loginParsed.data.telegramUsername.replace(/^@/, "").toLowerCase()
         : "";
 
-      if (claimedTgUser) {
-        const typedBare = typedHandle.replace(/^@/, "");
-        if (typedBare !== claimedTgUser) {
-          return res.status(403).json({
-            error:
-              "В поле логина должен быть ваш текущий Telegram @username, чужой ник вводить нельзя.",
-          });
-        }
-      }
+      let existingPlayer =
+        (claimedTgId ? gameState.players.find((p) => p.telegramId === claimedTgId) : undefined) ||
+        findPlayerByTelegram(gameState.players, {
+          telegramId: claimedTgId,
+          handle: typedHandle,
+        }) ||
+        gameState.players.find((p) => isCurrentLoginHandle(p, typedHandle));
 
-      // Login is the CURRENT @ only. Old handles and aliases are not accepted.
-      const existingPlayer = gameState.players.find((p) => isCurrentLoginHandle(p, typedHandle));
+      if (
+        claimedTgUser &&
+        existingPlayer &&
+        existingPlayer.telegramUsername &&
+        existingPlayer.telegramUsername.toLowerCase() !== claimedTgUser &&
+        !claimedTgId
+      ) {
+        return res.status(403).json({
+          error: "В поле логина должен быть ваш текущий Telegram @username.",
+        });
+      }
 
       if (existingPlayer) {
         if (claimedTgId) {
@@ -3103,6 +3109,10 @@ async function start() {
       // The player is taken from the authenticated session: nobody can roll on
       // behalf of somebody else any more.
       const player = gameState.players.find((p) => p.id === authPlayerId);
+      if (player && rollLocks.has(player.id)) {
+        socket.emit("error", "Бросок уже обрабатывается.");
+        return;
+      }
       if (!player) {
         /*
          * Чаще всего сюда попадает администратор.
@@ -3215,6 +3225,8 @@ async function start() {
         return;
       }
 
+      rollLocks.add(player.id);
+      try {
       // Set currentPlayerId and turnStatus for backward compatibility
       gameState.currentPlayerId = player.id;
       gameState.turnStatus = "waiting_roll";
@@ -3271,6 +3283,15 @@ async function start() {
 
       // Клетка, с которой игрок пошёл: нужна отчёту администратора и
       // затирается следующей же строкой.
+      if (Number(player.cell) >= 64) {
+        addLog({
+          id: "lap_unwrap_" + Date.now(),
+          message: `🔁 ${shownName(player)} снимается с Ядра (64) на старт нового круга.`,
+          timestamp: new Date().toLocaleTimeString(),
+          type: "system",
+        });
+      }
+      player.cell = startCellForMove(player.cell);
       const fromCell = player.cell;
 
       // Movement and prize rules live in src/game/rules.ts (pure + unit-tested).
@@ -3432,6 +3453,7 @@ async function start() {
           cellId: 64,
           receivedAt: Date.now(),
         });
+        player.cell = 0;
 
         addLog({
           id: "win_" + Date.now(),
@@ -3633,6 +3655,9 @@ async function start() {
 
       saveState();
       broadcastSlices("players", "logs", "meta");
+      } finally {
+        rollLocks.delete(player.id);
+      }
       } catch (err) {
         log.error("roll:request crashed", { error: String(err) });
         socket.emit("error", "Сбой броска. Попробуйте ещё раз.");
