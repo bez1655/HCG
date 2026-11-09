@@ -300,7 +300,10 @@ export default function BoardView({
     onSelectCalibrationCell?.(null);
   };
 
-  const me = gameState.players.find((p) => p.id === userId);
+  const me =
+    gameState.players.find((p) => p.id === userId) ||
+    gameState.players.find((p) => p.name === userId) ||
+    gameState.players.find((p) => p.telegramUsername && `@${p.telegramUsername}` === userId);
   // Ходов осталось в текущей пачке. Одобрение открывает несколько бросков
   // сразу, поэтому «мой ход» — это не «окно открыто», а «остались броски».
   /*
@@ -333,21 +336,11 @@ export default function BoardView({
   // Ask the server for a roll; the dice animation starts when the server
   // answers with its authoritative result (see the effect below).
   const handleRoll = () => {
-    // Only the player's remaining approved rolls matter. The global
-    // turnStatus flag has historically stayed "idle" after an approval
-    // and made the dice look dead while the player still had turns.
-    if (isRolling || !isMyTurn) {
-      console.warn("[HCG] handleRoll: условия не выполнены", {
-        isRolling,
-        isMyTurn,
-        turnStatus: gameState.turnStatus,
-        turnsLeft: myTurnsLeft,
-      });
-      return;
-    }
+    if (isRolling) return;
     console.info(
       "[HCG] Отправляю roll:request",
-      selectedItem ? `с предметом ${selectedItem}` : "без предметов"
+      selectedItem ? `с предметом ${selectedItem}` : "без предметов",
+      { isMyTurn, turnsLeft: myTurnsLeft, meId: me?.id }
     );
     setRolledNumber(null);
     onRoll(selectedItem || undefined);
@@ -359,6 +352,8 @@ export default function BoardView({
     if (pendingRoll !== null) {
       rollSessionRef.current += 1;
       setIsRolling(true);
+    } else {
+      setIsRolling(false);
     }
   }, [pendingRoll]);
 
@@ -1313,27 +1308,14 @@ export default function BoardView({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (!isMyTurn || isRolling) {
-                  // Раньше отказ был полностью беззвучным: ни в интерфейсе,
-                  // ни в консоли не оставалось следа, и «кнопка не работает»
-                  // невозможно было отличить от «запрос ушёл и потерялся».
-                  console.warn(
-                    "[HCG] Бросок отклонён на клиенте:",
-                    JSON.stringify({
-                      isMyTurn,
-                      turnStatus: gameState.turnStatus,
-                      isRolling,
-                      approvedUntil: me?.turnApprovedUntil ?? null,
-                    })
-                  );
+                if (isRolling) {
                   playSound("click");
-                  hapticNotification("warning");
                   return;
                 }
                 hapticImpact("heavy");
                 handleRoll();
               }}
-              disabled={isRolling}
+              disabled={false}
               className={`relative group flex flex-col items-center justify-center transition-all duration-300 ${
                 isMyTurn ? "cursor-pointer hover:scale-105 active:scale-95" : "cursor-not-allowed opacity-75"
               }`}

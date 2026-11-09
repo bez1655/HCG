@@ -18,7 +18,7 @@ export default function RpgEncounterModal({ session, onChoose, onClose }: Props)
         : session.merchant?.name || "Фиксер";
 
   return (
-    <div className="absolute inset-0 z-[80] flex items-end sm:items-center justify-center p-3 bg-black/70 pointer-events-none">
+    <div className="fixed inset-0 z-[220] flex items-center justify-center p-3 bg-black/75 pointer-events-auto">
       <div className="pointer-events-auto w-full max-w-sm bg-[#0a0814] border border-[#00ffaa]/40 rounded-2xl p-4 font-mono text-xs text-white shadow-[0_0_24px_rgba(0,255,170,0.2)]">
         <div className="text-[10px] tracking-widest text-[#00ffaa]/80 uppercase mb-1">
           Клетка {session.cellId} · {session.type}

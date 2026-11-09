@@ -545,7 +545,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-08.9";
+const SERVER_BUILD = "2026-11-08.12";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.

@@ -538,14 +538,32 @@ export default function App() {
     localStorage.setItem("hapstore_screen", "board");
   };
 
+  useEffect(() => {
+    if (!turnOutcome) return;
+    const t = window.setTimeout(() => setTurnOutcome(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [turnOutcome]);
+
+  useEffect(() => {
+    if (!gameState || !userId) return;
+    const p =
+      gameState.players.find((x) => x.id === userId) ||
+      gameState.players.find((x) => x.name === userId);
+    if (p?.pendingEncounter && !p.pendingEncounter.resolved) {
+      setEncounter((cur) => cur || p.pendingEncounter || null);
+    }
+  }, [gameState, userId]);
+
   const visibleScreen =
     screen === "admin" && userRole !== "admin" ? "board" : screen;
 
   // The server picks the dice value and replies with "roll:result".
   const handleRoll = (item?: "shield" | "loaded_dice" | "magnet") => {
-    if (socket && userId) {
-      socket.emit("roll:request", { useItem: item });
+    if (!socket || !socket.connected) {
+      setServerError("Нет связи с сервером. Откройте игру кнопкой «ИГРАТЬ» в боте ещё раз.");
+      return;
     }
+    socket.emit("roll:request", { useItem: item });
   };
 
   const handlePickDropBox = (boxIndex: number) => {
@@ -770,37 +788,6 @@ export default function App() {
           <div className="mt-1 text-[10px] text-red-300/70">нажмите, чтобы закрыть</div>
         </div>
       )}
-      <PopupCard
-        popup={activePopup}
-        onClose={() => setActivePopup(null)}
-        onRestartLap={handleRestartLap}
-        userId={userId}
-      />
-
-      {/* Результат хода — поверх всего, после каждого броска */}
-      <TurnOutcomeCard outcome={turnOutcome} onClose={() => setTurnOutcome(null)} />
-
-      {/* Интерактивный Кибер-дроп — выбор из 3 кейсов */}
-      {dropBoxSession && (
-        <DropBoxModal
-          cellId={dropBoxSession.cellId}
-          result={dropBoxResult}
-          onPick={handlePickDropBox}
-          onClose={() => {
-            setDropBoxSession(null);
-            setDropBoxResult(null);
-          }}
-        />
-      )}
-
-      {!dropBoxSession && encounter && (
-        <RpgEncounterModal
-          session={encounter}
-          onChoose={handleEncounterChoice}
-          onClose={() => setEncounter(null)}
-        />
-      )}
-
       {visibleScreen === "login" && (
         <LoginScreen
           backgroundUrl={gameState.loginBackground}
@@ -862,6 +849,32 @@ export default function App() {
             setScreen("board");
             localStorage.setItem("hapstore_screen", "board");
           }}
+        />
+      )}
+
+      <PopupCard
+        popup={activePopup}
+        onClose={() => setActivePopup(null)}
+        onRestartLap={handleRestartLap}
+        userId={userId}
+      />
+      <TurnOutcomeCard outcome={turnOutcome} onClose={() => setTurnOutcome(null)} />
+      {dropBoxSession && (
+        <DropBoxModal
+          cellId={dropBoxSession.cellId}
+          result={dropBoxResult}
+          onPick={handlePickDropBox}
+          onClose={() => {
+            setDropBoxSession(null);
+            setDropBoxResult(null);
+          }}
+        />
+      )}
+      {!dropBoxSession && encounter && (
+        <RpgEncounterModal
+          session={encounter}
+          onChoose={handleEncounterChoice}
+          onClose={() => setEncounter(null)}
         />
       )}
     </div>

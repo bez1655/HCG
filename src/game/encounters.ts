@@ -292,12 +292,13 @@ export function resolveEncounterChoice(
 
   const dice = d20(roll);
   session.lastRoll = dice;
-  const stats = player.characterStats!;
+  ensurePlayerRpg(player);
+  const stats = player.characterStats || { str: 1, int: 1, lck: 1 };
   const stamp = player.pendingCheckBonus ? 1 : 0;
   if (stamp) player.pendingCheckBonus = 0;
 
   if (session.type === "boss" && session.boss) {
-    const bonus = stats[session.boss.weakness] + stamp;
+    const bonus = (stats[session.boss.weakness] || 0) + stamp;
     const total = dice + bonus;
     const ok = total >= session.boss.dc;
     if (ok) {
@@ -312,7 +313,12 @@ export function resolveEncounterChoice(
 
   if (session.type === "quest" && session.quest) {
     const choice = session.quest.choices.find((c) => c.id === choiceId) || session.quest.choices[0];
-    const bonus = stats[choice.stat] + stamp;
+    if (!choice) {
+      session.resolved = true;
+      session.resultMessage = "Контракт сорвался. Попробуй ещё раз с этой клетки.";
+      return session;
+    }
+    const bonus = (stats[choice.stat] || 0) + stamp;
     const total = dice + bonus;
     const ok = total >= choice.dc;
     if (ok) {

@@ -4,12 +4,14 @@
  * inject a sequence without touching Math.random.
  */
 
+import nodeCrypto from "crypto";
+
 export type DiceFn = (sides: number) => number;
 
 /** Inclusive 1..sides. */
 export function cryptoDice(sides: number): number {
   const n = Math.max(2, Math.floor(sides));
-  return crypto.randomInt(1, n + 1);
+  return nodeCrypto.randomInt(1, n + 1);
 }
 
 /** Fixed D20. */
