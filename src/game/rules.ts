@@ -189,9 +189,15 @@ export function resolveMove(
 /**
  * Generate 3 diverse cyber-box choices for a drop box cell.
  */
+function unitRandom(): number {
+  if (typeof crypto !== "undefined" && typeof crypto.randomInt === "function") {
+    return crypto.randomInt(0, 1000) / 1000;
+  }
+  return Math.random();
+}
+
 export function generateDropBoxOptions(): DropBoxOption[] {
-  // Option 1: Forward booster (+2 or +3)
-  const jumpSteps = Math.random() < 0.5 ? 2 : 3;
+  const jumpSteps = unitRandom() < 0.5 ? 2 : 3;
   const opt1: DropBoxOption = {
     title: `Ускоритель +${jumpSteps}`,
     description: `Рывок вперёд на +${jumpSteps} ${pluralizeCells(jumpSteps)}!`,
@@ -200,16 +206,16 @@ export function generateDropBoxOptions(): DropBoxOption[] {
   };
 
   // Option 2: Store Discount Voucher
-  const discount = Math.random() < 0.5 ? 10 : 15;
+  const discount = unitRandom() < 0.5 ? 10 : 15;
   const opt2: DropBoxOption = {
     title: `Скидка ${discount}% в Hapstore`,
     description: `Купон на скидку ${discount}% при покупке в магазине!`,
     type: "promo",
-    promoCode: `HAP-${discount}-${Math.floor(1000 + Math.random() * 9000)}`,
+    promoCode: `HAP-${discount}-${1000 + (typeof crypto.randomInt === "function" ? crypto.randomInt(0, 9000) : Math.floor(Math.random() * 9000))}`,
   };
 
   // Option 3: Consumable Item or small glitch
-  const rollThird = Math.random();
+  const rollThird = unitRandom();
   let opt3: DropBoxOption;
   if (rollThird < 0.35) {
     opt3 = {
@@ -244,7 +250,7 @@ export function generateDropBoxOptions(): DropBoxOption[] {
   const options = [opt1, opt2, opt3];
   // Fisher-Yates shuffle
   for (let i = options.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(unitRandom() * (i + 1));
     [options[i], options[j]] = [options[j], options[i]];
   }
   return options;

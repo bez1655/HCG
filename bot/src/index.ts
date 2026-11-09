@@ -195,6 +195,8 @@ function playerKeyboard(registered: boolean) {
   }
   if (!registered) {
     rows.push([Markup.button.callback("📝 ЗАПРОСИТЬ РЕГИСТРАЦИЮ", "self_register")]);
+  } else {
+    rows.push([Markup.button.callback("👤 ГЕРОЙ", "show_hero")]);
   }
   rows.push([Markup.button.callback("ℹ️ ПОМОЩЬ", "show_help")]);
   return Markup.inlineKeyboard(rows);
@@ -258,12 +260,46 @@ async function isRegistered(username?: string, telegramId?: number): Promise<boo
   }
 }
 
+const CLASS_LABEL: Record<string, string> = {
+  picker: "Хром-джек",
+  courier: "Гоуст-раннер",
+  clerk: "Фиксер",
+  analyst: "Нетраннер",
+};
+
+const RANK_LABEL: Record<string, string> = {
+  intern: "Стрит",
+  operative: "Раннер",
+  veteran: "Соло",
+  master: "Эйс",
+  legend: "Легенда сектора",
+};
+
+function ruClass(id?: string): string {
+  return (id && CLASS_LABEL[id]) || CLASS_LABEL.picker;
+}
+
+function ruRank(id?: string): string {
+  return (id && RANK_LABEL[id]) || RANK_LABEL.intern;
+}
+
+const GAME_RULES_SHORT =
+  "<b>Город на 64 клетках</b>\n" +
+  "• Покупка в Hapstore открывает ход. Несколько покупок — пачка бросков.\n" +
+  "• Качай героя: контракты, фиксер, боссы кварталов дают XP и статы.\n" +
+  "• Фиксер: карта сектора, хром-печать +1 к проверке, сброс ICE с фишки.\n" +
+  "• Боссы: 16, 32, 48 и <b>63</b>. Клетка <b>64</b> — Ядро и главный приз.\n" +
+  "• Ранг и скидка Hapstore растут с покупками: 3% / 5% / 7% / 10%.\n" +
+  "• Классы: хром-джек, гоуст-раннер, фиксер, нетраннер.";
+
 const WELCOME = (name: string, registered: boolean) =>
-  `🤖 <b>HCG — Hapstore Cyber Game</b>\n\nПривет, ${escapeHtml(name)}!\n\n` +
+  `⚡ <b>HCG — Hapstore Cyber Game</b>\n\n${escapeHtml(name)}, джек-ин.\n\n` +
+  GAME_RULES_SHORT +
+  `\n\n` +
   (registered
-    ? "Вы зарегистрированы. Нажмите «🎮 ИГРАТЬ» — пароль вводить не нужно."
-    : "Чтобы попасть в игру, нажмите «📝 ЗАПРОСИТЬ РЕГИСТРАЦИЮ».\n" +
-      "Администратор подтвердит заявку, и бот пришлёт сюда ваш логин и пароль.");
+    ? "Ты в сетке. «🎮 ИГРАТЬ» — доска. «👤 ГЕРОЙ» — прокачка."
+    : "Чтобы войти в город, нажми «📝 ЗАПРОСИТЬ РЕГИСТРАЦИЮ».\n" +
+      "После одобрения откроется доска. Пароль — только для браузера.");
 
 bot.start(async (ctx) => {
   const display = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
@@ -352,6 +388,58 @@ bot.command("play", async (ctx) => {
   return ctx.reply("Открывайте доску 👇", playerKeyboard(true));
 });
 
+async function replyHeroCard(ctx: Context): Promise<void> {
+  const from = ctx.from;
+  if (!from) {
+    await ctx.reply("Не вижу аккаунт Telegram.");
+    return;
+  }
+  const registered = await isRegistered(from.username, from.id);
+  if (!registered) {
+    await ctx.reply("Сначала /register — герой появляется после записи в игру.", playerKeyboard(false));
+    return;
+  }
+  try {
+    const q = new URLSearchParams();
+    if (from.username) q.set("username", normaliseHandle(from.username));
+    q.set("telegramId", String(from.id));
+    const res = await internalFetch(`/api/internal/player-status?${q.toString()}`);
+    const data = (await res.json()) as {
+      alias?: string;
+      characterClass?: string;
+      characterLevel?: number;
+      loyaltyRank?: string;
+      loyaltyCredits?: number;
+      purchaseCount?: number;
+      discountPercent?: number;
+    };
+    const disc = data.discountPercent ?? 0;
+    const buys = data.purchaseCount ?? 0;
+    await ctx.reply(
+      `<b>Герой</b>\n` +
+        `Позывной: ${escapeHtml(data.alias || "—")}\n` +
+        `Класс: ${escapeHtml(ruClass(data.characterClass))}\n` +
+        `Уровень: ${data.characterLevel ?? 1} — качай XP на контрактах и боссах\n` +
+        `Ранг: ${escapeHtml(ruRank(data.loyaltyRank))}\n` +
+        `Рейды (покупки): ${buys} · скидка Hapstore: ${disc}%\n` +
+        `Репутация: ${data.loyaltyCredits ?? 0}\n\n` +
+        `<i>Прокачка: бои 16/32/48/63, контракты, фиксер.\n` +
+        `Скидка: 3 → 3%, 8 → 5%, 15 → 7%, 25 → 10%.\n` +
+        `Ядро и приз — клетка 64.</i>`,
+      { parse_mode: "HTML", ...playerKeyboard(true) }
+    );
+  } catch {
+    await ctx.reply("Сервер игры сейчас не ответил. Откройте кабинет «Герой» на доске.");
+  }
+}
+
+bot.command("hero", (ctx) => replyHeroCard(ctx));
+
+bot.action("show_hero", async (ctx) => {
+  await ctx.answerCbQuery();
+  await replyHeroCard(ctx);
+});
+
 /**
  * Справка игроку.
  *
@@ -360,37 +448,38 @@ bot.command("play", async (ctx) => {
  * возможности и задавать вопросы.
  */
 const HELP_TEXT =
-  "<b>Команды HCG</b>\n\n" +
-  "/start — начало работы и кнопки\n" +
-  "/register — запросить регистрацию\n" +
-  "/play — кнопка «ИГРАТЬ»\n" +
+  "<b>Команды</b>\n" +
+  "/start — правила и кнопки\n" +
+  "/register — заявка в игру\n" +
+  "/play — открыть доску\n" +
+  "/hero — прокачка героя\n" +
   "/help — эта справка\n\n" +
-  "<b>Как это работает</b>\n" +
-  "1. Вы отправляете заявку.\n" +
-  "2. Администратор нажимает «ЗАРЕГИСТРИРОВАТЬ».\n" +
-  "3. Бот присылает сюда логин и пароль.\n" +
-  "3a. Купили несколько товаров — в игре при запросе хода укажите, сколько " +
-  "бросков вам нужно. Одобрят все сразу, ждать между бросками не придётся.\n" +
-  "4. Внутри Telegram пароль не нужен — кнопка «ИГРАТЬ» пускает сразу. " +
-  "Пароль пригодится только для входа через браузер.\n\n" +
-  "<i>В игре вас видят под игровым псевдонимом — ваш Telegram другим " +
-  "участникам не показывается.</i>";
+  GAME_RULES_SHORT +
+  "\n\n" +
+  "<b>Как попасть</b>\n" +
+  "1. Заявка → администратор регистрирует.\n" +
+  "2. Купили товар — в игре укажите, сколько бросков (пачка сразу).\n" +
+  "3. В Telegram пароль не нужен. Пароль — только браузер.\n\n" +
+  "<i>Другие игроки видят псевдоним, не ваш Telegram.</i>";
 
 /** Полная справка для администратора: все команды, сгруппированные по делу. */
 const ADMIN_HELP_TEXT =
   "<b>Команды HCG — администратор</b>\n\n" +
+  "<b>Доска</b>\n" +
+  "Покупка открывает ход. Героя качают боссы 16/32/48/63. Ядро — 64.\n" +
+  "/hero — уровень, ранг, скидка. Рассылку /all — когда BUILD 08.6 на сервере.\n\n" +
   "<b>Что ждёт решения</b>\n" +
   "/requests — сводка: заявки, запросы ходов, невыданные призы\n" +
   "/pending — заявки на регистрацию с кнопками\n" +
   "/players — выгрузить полный список игроков файлом\n\n" +
   "<b>Ходы и девайсы</b>\n" +
   "/turns &lt;кого&gt; [сколько] — выдать ходы без заявки\n" +
-  "   например: <code>/turns Бэтмен 3</code>\n" +
+  "   например: <code>/turns Сайфер 3</code>\n" +
   "/gift &lt;кого&gt; &lt;shield|dice|magnet&gt; — выдать кибер-девайс (+1 Щит, +1 Кубик или +1 Магнит)\n" +
-  "   например: <code>/gift Бэтмен magnet</code>\n\n" +
+  "   например: <code>/gift Сайфер magnet</code>\n\n" +
   "<b>Связь с игроком</b>\n" +
   "/msg &lt;кого&gt; &lt;текст&gt; — личное сообщение игроку\n" +
-  "   по псевдониму: <code>/msg Бэтмен Ваш приз готов</code>\n" +
+  "   по псевдониму: <code>/msg Сайфер Ваш приз готов</code>\n" +
   "   по хендлу: <code>/msg @ivan Ваш приз готов</code>\n" +
   "   псевдоним из двух слов — в кавычках\n" +
   "/all &lt;текст&gt; — написать всем игрокам\n" +
@@ -406,7 +495,7 @@ const ADMIN_HELP_TEXT =
   "/reload_admins — перечитать список\n" +
   "/sync_names — обновить @ники игроков из Telegram\n\n" +
   "<b>Общие</b>\n" +
-  "/start · /play · /help\n\n" +
+  "/start · /play · /hero · /help\n\n" +
   "<i>Кого угодно можно назвать и псевдонимом, и настоящим @хендлом — " +
   "вы видите оба. Игроки видят только псевдонимы.</i>\n" +
   "<i>Обратиться к игроку можно и из чата игры: напишите его псевдоним " +
@@ -866,7 +955,7 @@ bot.command("msg", adminManager.middleware(), async (ctx) => {
   if (parts.length < 2) {
     return ctx.reply(
       "Использование: /msg <@хендл или Псевдоним> <текст>\n" +
-        "Например: /msg Бэтмен Ваш приз ждёт в магазине\n" +
+        "Например: /msg Сайфер Ваш приз ждёт в магазине\n" +
         'Псевдоним из двух слов берите в кавычки: /msg "Гарри Поттер" текст'
     );
   }
@@ -1746,6 +1835,7 @@ if (BOT_TOKEN) {
       { command: "start", description: "Начало работы" },
       { command: "register", description: "Запросить регистрацию" },
       { command: "play", description: "Открыть игру" },
+      { command: "hero", description: "Герой и ранг лояльности" },
       { command: "help", description: "Справка" },
     ])
     .catch((e) => console.warn("[Bot] Could not publish command list:", e?.message || e));

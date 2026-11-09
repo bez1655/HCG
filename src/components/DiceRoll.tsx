@@ -36,9 +36,11 @@ interface DiceRollProps {
 }
 
 /** Spin, then settle. Duration in ms. */
-const SPIN_MS = 1800;
+export const SPIN_MS = 1500;
 /** How long the result stays on screen before the overlay closes. */
-const HOLD_MS = 1600;
+export const HOLD_MS = 800;
+/** Card overlays wait at least this long so they do not cover the spin. */
+export const DICE_CARD_DELAY_MS = SPIN_MS + HOLD_MS;
 
 /**
  * Static stylesheet, injected once for the whole application.

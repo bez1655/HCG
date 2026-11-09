@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isMovieAlias, isHorrorAlias } from "./aliases";
+import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isHorrorAlias } from "./aliases";
 
 /**
  * Псевдонимы закрывают Telegram-хендл игрока от остальных участников.
@@ -8,10 +8,9 @@ import { ALIAS_POOL, pickAlias, looksLikeHandle, publicName, isMovieAlias, isHor
  * игрокам НИ ПРИ КАКИХ обстоятельствах — включая случай, когда герои
  * кончились или запись пришла из старого состояния без псевдонима.
  */
-describe("список псевдонимов персонажей кино", () => {
-  it("содержит от 150 до 200 уникальных имен культовых персонажей", () => {
-    expect(ALIAS_POOL.length).toBeGreaterThanOrEqual(150);
-    expect(ALIAS_POOL.length).toBeLessThanOrEqual(200);
+describe("список псевдонимов", () => {
+  it("достаточно длинный для реальной партии", () => {
+    expect(ALIAS_POOL.length).toBeGreaterThanOrEqual(100);
   });
 
   it("не содержит повторов", () => {
@@ -23,9 +22,10 @@ describe("список псевдонимов персонажей кино", ()
     expect(ALIAS_POOL.filter((a) => a.includes("@"))).toEqual([]);
   });
 
-  it("собран из популярных киногероев", () => {
-    for (const hero of ["Нео", "Джон Уик", "Терминатор", "Бэтмен", "Джек Воробей", "Арагорн", "Джеймс Бонд"]) {
-      expect(ALIAS_POOL).toContain(hero);
+  it("не содержит киногероев и чужих франшиз", () => {
+    const banned = ["Майкл Майерс", "Нео", "Уик", "Бонд", "Человек-Паук", "Бэтмен", "Пеннивайз"];
+    for (const hero of banned) {
+      expect(ALIAS_POOL).not.toContain(hero);
     }
   });
 });
@@ -45,8 +45,8 @@ describe("выдача псевдонима", () => {
   });
 
   it("не считает занятым имя в другом регистре", () => {
-    const alias = pickAlias(["нео"]);
-    expect(alias.toLowerCase()).not.toBe("нео");
+    const alias = pickAlias(["сайфер"]);
+    expect(alias.toLowerCase()).not.toBe("сайфер");
   });
 
   it("продолжает выдавать имена, когда весь список исчерпан", () => {
@@ -67,13 +67,10 @@ describe("выдача псевдонима", () => {
     }
   });
 
-  it("распознает имена киногероев и суффиксы", () => {
-    expect(isMovieAlias("Нео")).toBe(true);
-    expect(isMovieAlias("Нео 2")).toBe(true);
-    expect(isMovieAlias("Джон Уик 3")).toBe(true);
-    expect(isMovieAlias("НеизвестныйГерой123")).toBe(false);
-    // Обратная совместимость с isHorrorAlias
-    expect(isHorrorAlias("Бэтмен")).toBe(true);
+  it("recognises horror pool names", () => {
+    expect(isHorrorAlias("Сайфер")).toBe(true);
+    expect(isHorrorAlias("Сайфер 2")).toBe(true);
+    expect(isHorrorAlias("Шторм")).toBe(false);
   });
 
   it("уважает переданный источник случайности", () => {
@@ -88,7 +85,7 @@ describe("выдача псевдонима", () => {
 
 describe("публичное имя", () => {
   it("показывает псевдоним, когда он есть", () => {
-    expect(publicName({ alias: "Бэтмен", name: "@real_user" })).toBe("Бэтмен");
+    expect(publicName({ alias: "Сайфер", name: "@real_user" })).toBe("Сайфер");
   });
 
   it("никогда не показывает Telegram-хендл", () => {
@@ -111,7 +108,7 @@ describe("публичное имя", () => {
   it("узнаёт хендл", () => {
     expect(looksLikeHandle("@user")).toBe(true);
     expect(looksLikeHandle("  @user")).toBe(true);
-    expect(looksLikeHandle("Бэтмен")).toBe(false);
+    expect(looksLikeHandle("Сайфер")).toBe(false);
     expect(looksLikeHandle(undefined)).toBe(false);
   });
 });

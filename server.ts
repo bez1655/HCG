@@ -4,15 +4,23 @@ import http from "http";
 import path from "path";
 import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
-import { CellType, GameState, Player, Cell, ChatMessage, GameLog } from "./src/types";
+import { CellType, GameState, Player, Cell, ChatMessage, GameLog, PrizeRecord } from "./src/types";
 import crypto from "crypto";
 import { hashPassword, verifyPassword, escapeHtml, generatePassword } from "./src/utils/security";
 import * as firestore from "./src/persistence/firestore";
 import { atomicWrite, ensureDir } from "./src/persistence/files";
 import { choosePersistedState } from "./src/persistence/chooseState";
 import { resolveMove, isMilestone, generateDropBoxOptions, isDropBoxCell } from "./src/game/rules";
+import {
+  ensurePlayerRpg,
+  beginEncounter,
+  resolveEncounterChoice,
+} from "./src/game/encounters";
+import { syncPurchaseLoyalty, getLoyaltyDiscountPercent } from "./src/game/loyalty";
+import { keepBetterPrize, isBlockingShopPrize } from "./src/game/prizes";
+import { cryptoDice } from "./src/game/rpgRng";
 import { getSkinBySrc } from "./src/game/skins";
-import { pickAlias, publicName, isMovieAlias, isHorrorAlias, takenMovieNames, takenHorrorNames } from "./src/game/aliases";
+import { pickAlias, publicName, isHorrorAlias, takenHorrorNames } from "./src/game/aliases";
 import { findMentions } from "./src/game/mentions";
 import {
   applyTelegramHandle,
@@ -260,6 +268,19 @@ function takenAliases(): string[] {
 
 
 /** Имя игрока, которое разрешено показать остальным участникам. */
+function attachRpgAndMaybeEncounter(
+  socket: { emit: (ev: string, payload: unknown) => void },
+  player: Player,
+  cellId: number
+) {
+  ensurePlayerRpg(player);
+  player.pendingEncounter = null;
+  const session = beginEncounter(player, cellId);
+  if (!session) return;
+  player.pendingEncounter = session;
+  socket.emit("encounter:available", session);
+}
+
 function shownName(player: { alias?: string; name?: string }): string {
   return publicName(player);
 }
@@ -302,69 +323,55 @@ function maskPlayer(p: Player): Player {
   delete masked.previousHandles;
   delete masked.previousAlias;
   delete masked.pendingHorrorAlias;
-  delete masked.pendingMovieAlias;
   delete masked.prizeLog;
   delete masked.lastTurnReminderAt;
   return masked;
 }
 
 
-function reserveMovieAliases(): void {
+function reserveHorrorAliases(): void {
   let added = 0;
   for (const p of gameState.players) {
     if (p.role !== "player") continue;
-    // Если у игрока уже есть псевдоним из пула киногероев — ничего не меняем
-    if (isMovieAlias(p.alias)) {
-      if (p.pendingMovieAlias) delete p.pendingMovieAlias;
+    if (isHorrorAlias(p.alias)) {
       if (p.pendingHorrorAlias) delete p.pendingHorrorAlias;
       continue;
     }
-    // Если уже зарезервирован киногерой — оставляем
-    if (p.pendingMovieAlias && isMovieAlias(p.pendingMovieAlias)) continue;
-    if (p.pendingHorrorAlias && isMovieAlias(p.pendingHorrorAlias)) {
-      p.pendingMovieAlias = p.pendingHorrorAlias;
-      delete p.pendingHorrorAlias;
-      continue;
-    }
-    p.pendingMovieAlias = pickAlias(takenMovieNames(gameState.players));
-    delete p.pendingHorrorAlias;
+    if (p.pendingHorrorAlias && isHorrorAlias(p.pendingHorrorAlias)) continue;
+    p.pendingHorrorAlias = pickAlias(takenHorrorNames(gameState.players));
     added += 1;
   }
   if (added) {
-    log.info("Reserved movie character aliases", { added });
+    log.info("Reserved horror aliases", { added });
     saveState();
   }
 }
 
-function applyPendingMovieAlias(player: Player): { from: string; to: string } | null {
-  const next = (player.pendingMovieAlias || player.pendingHorrorAlias)?.trim();
+function applyPendingHorrorAlias(player: Player): { from: string; to: string } | null {
+  const next = player.pendingHorrorAlias?.trim();
   if (!next) return null;
   const from = player.alias || publicName(player);
   player.previousAlias = player.alias;
   player.alias = next;
-  delete player.pendingMovieAlias;
   delete player.pendingHorrorAlias;
   void sendTelegramMessage(
     player.telegramId || player.name,
-    `🎬 <b>Кино-сезон в Hapstore</b>
+    `🎃 <b>Хеллоуин в Hapstore</b>
 
-Ваш игровой псевдоним обновлён на культового персонажа кино.
+Ваш игровой псевдоним сменился.
 Было: <b>${escapeHtml(from)}</b>
 Стало: <b>${escapeHtml(next)}</b>
 
 На доске вас теперь видят как «${escapeHtml(next)}».`
   );
   void sendTelegramMessageToAdmin(
-    `🎬 Смена псевдонима (Киногерои)
+    `🎃 Смена псевдонима
 ${escapeHtml(from)} → <b>${escapeHtml(next)}</b>
 ${escapeHtml(player.name)}`
   );
-  log.info("Movie character alias applied", { player: player.id, from, to: next });
+  log.info("Horror alias applied", { player: player.id, from, to: next });
   return { from, to: next };
 }
-
-const reserveHorrorAliases = reserveMovieAliases;
-const applyPendingHorrorAlias = applyPendingMovieAlias;
 
 
 function pushPrize(player: Player, bonus: NonNullable<Player["activeBonus"]>): void {
@@ -390,6 +397,14 @@ function markPrizeRedeemed(player: Player, label: string): void {
     open.redeemedAt = Date.now();
     if (label) open.extra = open.extra || label;
   }
+}
+
+function applyShopPrize(player: Player, incoming: NonNullable<Player["activeBonus"]>) {
+  pushPrize(player, incoming);
+  const previous = player.activeBonus ?? null;
+  const { active, replaced } = keepBetterPrize(previous, incoming);
+  player.activeBonus = active;
+  return { previous, active, tookIncoming: !previous || replaced };
 }
 
 function consumePlayerBonus(player: Player): string | null {
@@ -530,7 +545,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-06.1";
+const SERVER_BUILD = "2026-11-08.8";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1065,10 +1080,18 @@ function approveTurn(
     };
   }
 
-  // Prize is recorded for the shop; it must not freeze the board.
-  // Admin can still mark it redeemed from the console.
   if (player.activeBonus && confirmBonusUse) {
     consumePlayerBonus(player);
+  }
+  if (isBlockingShopPrize(player.activeBonus) && !confirmBonusUse) {
+    const label = player.activeBonus?.extra || player.activeBonus?.name || "приз";
+    return {
+      ok: false,
+      error:
+        `Сначала выдайте в магазине: ${label}. ` +
+        `Пока приз висит, новую пачку ходов открыть нельзя. Текущая пачка (если ещё есть броски) не трогается.`,
+      player,
+    };
   }
 
   /*
@@ -1104,6 +1127,10 @@ function approveTurn(
   // окно. Сервер на неё не смотрит: право на бросок держит turnsApproved.
   player.turnApprovedUntil = Date.now() + LEGACY_WINDOW_MS;
   player.turnsApproved = turns;
+  if (player.turnRequested || requireRequest) {
+    player.purchaseCount = (player.purchaseCount || 0) + turns;
+    syncPurchaseLoyalty(player);
+  }
   player.turnBatchStartedAt = Date.now();
   player.lastTurnReminderAt = Date.now();
   player.turnRequested = false;
@@ -1573,7 +1600,7 @@ async function start() {
   }
 
   hydrateTurnJournal();
-  reserveMovieAliases();
+  reserveHorrorAliases();
 
   // Load auth passwords from Firestore first, fallback to local file
   let loadedAuthFromFirestore = false;
@@ -1900,12 +1927,9 @@ async function start() {
         turnsRequested: p.turnsRequested,
         turnApprovedUntil: p.turnApprovedUntil,
         turnsApproved: p.turnsApproved,
-        // Нужна доске, чтобы скрыть фишку давно пропавшего игрока. Это не
-        // персональные данные: только момент последнего появления в игре.
         lastSeenAt: p.lastSeenAt,
         avatar: p.avatar,
         chipImage: p.chipImage,
-        activeBonus: p.activeBonus,
         // telegramId / telegramUsername intentionally omitted (personal data)
       })),
       logs: logsForPlayers(state.logs || []),
@@ -2063,6 +2087,7 @@ async function start() {
 
     const handle = raw ? normaliseHandle(raw) : null;
     const player = findPlayerByTelegram(gameState.players, { telegramId, handle });
+    if (player) ensurePlayerRpg(player);
     res.json({
       success: true,
       registered: Boolean(player),
@@ -2070,6 +2095,13 @@ async function start() {
         handle && listRegistrationRequests().find((r) => r.username === handle)
       ),
       name: player?.name,
+      alias: player?.alias,
+      characterClass: player?.characterClass,
+      characterLevel: player?.characterLevel,
+      loyaltyRank: player?.loyaltyRank,
+      loyaltyCredits: player?.loyaltyCredits,
+      purchaseCount: player?.purchaseCount,
+      discountPercent: player ? getLoyaltyDiscountPercent(player.purchaseCount || 0) : 0,
     });
   });
 
@@ -2369,7 +2401,7 @@ async function start() {
       // Отметка присутствия: по ней фишка остаётся на доске.
       player.lastSeenAt = Date.now();
       if (handle) applyTelegramHandle(gameState.players, player, handle);
-      applyPendingMovieAlias(player);
+      applyPendingHorrorAlias(player);
       if (!player.chipImage) player.chipImage = getRandomChipImage(takenChips());
       if (parsed.data.color) player.color = parsed.data.color;
 
@@ -2605,8 +2637,6 @@ async function start() {
       } catch {
         failed.push(shownName(player));
       }
-      // Задержка 40мс (~25 сообщ./сек) для строгого соблюдения лимитов Telegram Bot API (30 msg/sec)
-      await new Promise((resolve) => setTimeout(resolve, 40));
     }
 
     addLog({
@@ -2825,7 +2855,7 @@ async function start() {
         }
         existingPlayer.isOnline = true;
         existingPlayer.lastSeenAt = Date.now();
-        applyPendingMovieAlias(existingPlayer);
+        applyPendingHorrorAlias(existingPlayer);
         if (!existingPlayer.chipImage) {
           existingPlayer.chipImage = getRandomChipImage(takenChips());
         }
@@ -2848,15 +2878,6 @@ async function start() {
     }
   );
 
-  // Global Express error handler to prevent internal stack traces leaking to clients
-  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    log.error("Express unhandled error", errorContext(err));
-    const status = typeof err.status === "number" ? err.status : 400;
-    res.status(status).json({
-      error: err.type === "entity.parse.failed" ? "Некорректный JSON в теле запроса" : (err.message || "Ошибка сервера"),
-    });
-  });
-
   // Socket communication
   // Authenticate every socket during the handshake. The identity comes from a
   // signed session token issued by /api/login, never from a client-supplied id.
@@ -2870,69 +2891,6 @@ async function start() {
     socket.data.role = session.role;
     next();
   });
-
-  function triggerPlayerVictory(player: Player, feverActive = false): NonNullable<Player["activeBonus"]> {
-    player.cell = 64;
-    const bonusName = "МЕГА-КРИСТАЛЛ";
-    let grandValue = 13800;
-    let grandDesc = "Главный приз: МЕГА-КРИСТАЛЛ";
-    if (feverActive) {
-      grandValue *= 2;
-      grandDesc += " • 🔥 УДВОЕНО В РЕЖИМЕ FEVER!";
-    }
-    const bonus: NonNullable<Player["activeBonus"]> = {
-      name: bonusName,
-      extra: "МЕГА-КРИСТАЛЛ",
-      description: grandDesc,
-      value: grandValue,
-      cellId: 64,
-      receivedAt: Date.now(),
-    };
-    player.activeBonus = bonus;
-    pushPrize(player, bonus);
-
-    player.lapsCompleted = (player.lapsCompleted || 0) + 1;
-    pushPrize(player, {
-      name: "Ключ ядра",
-      extra: `КРУГ ${player.lapsCompleted}`,
-      description: "Полный проход поля. Можно начать новый круг, инвентарь сохранится.",
-      value: 0,
-      cellId: 64,
-      receivedAt: Date.now(),
-    });
-
-    addLog({
-      id: "win_" + Date.now(),
-      message: `🏆 ЯДРО СЕТИ. ${shownName(player)} закрыл круг ${player.lapsCompleted}. Приз: ${bonusName}${feverActive ? " (🔥 x2 FEVER!)" : ""}. Можно начать новый круг — фишка на старт, девайсы остаются.`,
-      timestamp: new Date().toLocaleTimeString(),
-      type: "system",
-    });
-
-    io.emit("event:trigger", {
-      title: "ЯДРО СЕТИ",
-      description: `${shownName(player)} прошёл поле (круг ${player.lapsCompleted}). Главный приз в кабинете. Новый круг: фишка на клетку 0, щиты и кубики остаются.`,
-      playerName: shownName(player),
-      type: "win",
-      playerId: player.id,
-    });
-
-    io.emit("toast:achievement", {
-      title: "ПОЛНЫЙ ЦИКЛ",
-      message: `${shownName(player)} завершил круг!`,
-      icon: "🏆",
-      type: "lap",
-    });
-
-    const winMsg = `🏆 <b>КИБЕР-ПОБЕДИТЕЛЬ!</b> Игрок <b>${escapeHtml(player.name)}</b> дошел до финала и забрал главный приз: ${escapeHtml(bonusName)}${feverActive ? " (Удвоено в режиме FEVER: 27600₽!)" : ""}!`;
-    void sendTelegramMessageToAdmin(winMsg);
-    if (player.telegramId || player.name) {
-      sendTelegramMessage(
-        player.telegramId || player.name,
-        `🏆 <b>ПОБЕДА!</b> Вы дошли до финала и забрали главный приз: МЕГА-КРИСТАЛЛ!${feverActive ? "\n🔥 Награда удвоена в режиме лихорадки!" : ""}`
-      );
-    }
-    return bonus;
-  }
 
   io.on("connection", (socket) => {
     const authPlayerId: string = socket.data.playerId;
@@ -2980,7 +2938,7 @@ async function start() {
       const connected = gameState.players.find((pl) => pl.id === authPlayerId);
       if (connected) {
         connected.lastSeenAt = Date.now();
-        if (applyPendingMovieAlias(connected)) {
+        if (applyPendingHorrorAlias(connected)) {
           saveState();
         }
         broadcastSlices("players");
@@ -3107,6 +3065,7 @@ async function start() {
 
     // Roll Request
     socket.on("roll:request", (payload?: { useItem?: string }) => {
+      try {
       /*
        * Unconditional entry log.
        *
@@ -3397,6 +3356,8 @@ async function start() {
           cellId: outcome.finalCell,
           options,
         });
+      } else {
+        attachRpgAndMaybeEncounter(socket, player, player.cell);
       }
 
       /*
@@ -3445,12 +3406,70 @@ async function start() {
 
       // Check if finished or landed on prize
       if (player.cell >= 64) {
-        const previousBonus = player.activeBonus ?? null;
-        const victoryBonus = triggerPlayerVictory(player, feverActive);
+        player.cell = 64;
+        const bonusName = "МЕГА-КРИСТАЛЛ";
+        const incoming = {
+          name: bonusName,
+          extra: "МЕГА-КРИСТАЛЛ",
+          description: "Главный приз: МЕГА-КРИСТАЛЛ",
+          value: 13800,
+          cellId: 64,
+          receivedAt: Date.now(),
+        };
+        const applied = applyShopPrize(player, incoming);
+        const hadOldBonus = !!applied.previous;
 
         report.finished = true;
-        report.awardedBonus = victoryBonus;
-        report.replacedBonus = previousBonus;
+        report.awardedBonus = player.activeBonus;
+        report.replacedBonus = applied.tookIncoming ? applied.previous : incoming;
+
+        player.lapsCompleted = (player.lapsCompleted || 0) + 1;
+        pushPrize(player, {
+          name: "Ключ ядра",
+          extra: `КРУГ ${player.lapsCompleted}`,
+          description: "Полный проход поля. Можно начать новый круг, инвентарь сохранится.",
+          value: 0,
+          cellId: 64,
+          receivedAt: Date.now(),
+        });
+
+        addLog({
+          id: "win_" + Date.now(),
+          message: `🏆 ЯДРО СЕТИ. ${shownName(player)} закрыл круг ${player.lapsCompleted}. Приз: ${bonusName}. Можно начать новый круг — фишка на старт, девайсы остаются.`,
+          timestamp: new Date().toLocaleTimeString(),
+          type: "system",
+        });
+
+        io.emit("event:trigger", {
+          title: "ЯДРО СЕТИ",
+          description: `${shownName(player)} прошёл поле (круг ${player.lapsCompleted}). Главный приз в кабинете. Новый круг: фишка на клетку 0, щиты и кубики остаются.`,
+          playerName: shownName(player),
+          type: "win",
+          playerId: player.id,
+        });
+
+        io.emit("toast:achievement", {
+          title: "ПОЛНЫЙ ЦИКЛ",
+          message: `${shownName(player)} завершил круг!`,
+          icon: "🏆",
+          type: "lap",
+        });
+
+        /*
+         * Только администратору, не в общий чат.
+         *
+         * Игрок не должен узнавать о чужих призах и победах: это его личное
+         * дело с магазином. Раньше сообщение уходило в группу, где сидят все
+         * участники сразу.
+         */
+        const winMsg = `🏆 <b>КИБЕР-ПОБЕДИТЕЛЬ!</b> Игрок <b>${escapeHtml(player.name)}</b> дошел до финала и забрал главный приз: ${escapeHtml(bonusName)}!`;
+        void sendTelegramMessageToAdmin(winMsg);
+        if (player.telegramId || player.name) {
+          sendTelegramMessage(
+            player.telegramId || player.name,
+            `🏆 <b>ПОБЕДА!</b> Вы дошли до финала и забрали главный приз: МЕГА-КРИСТАЛЛ!`
+          );
+        }
       } else if (
         bonusText &&
         cell &&
@@ -3474,9 +3493,8 @@ async function start() {
         });
 
         if (cell.type === CellType.FLASK || cell.type === CellType.BITCOIN) {
-          const hadOldBonus = !!player.activeBonus;
-          const previousBonus = player.activeBonus ?? null;
-          const bonusObj: NonNullable<Player["activeBonus"]> = outcome.awardedBonus || {
+          const bonusName = cell.extra || cell.name;
+          const incoming = {
             name: cell.name,
             extra: cell.extra || "",
             description: cell.description,
@@ -3484,20 +3502,20 @@ async function start() {
             cellId: cell.id,
             receivedAt: Date.now(),
           };
-          player.activeBonus = bonusObj;
-          const bonusName = bonusObj.extra || bonusObj.name;
-          pushPrize(player, player.activeBonus);
+          const applied = applyShopPrize(player, incoming);
+          const hadOldBonus = !!applied.previous;
 
           report.awardedBonus = player.activeBonus;
-          report.replacedBonus = previousBonus;
+          report.replacedBonus = applied.tookIncoming ? applied.previous : incoming;
 
-          const bonusDesc = bonusObj.description || cell.description;
+          // Выдача приза — дело администратора, остальным игрокам знать
+          // о чужой награде незачем.
           const prizeMsg = `🎉 Игрок <b>${escapeHtml(player.name)}</b> получил награду: ${escapeHtml(bonusName)}!${hadOldBonus ? " <i>(Предыдущий бонус заменен, призы не суммируются)</i>" : ""}`;
           void sendTelegramMessageToAdmin(prizeMsg);
           if (player.telegramId || player.name) {
             sendTelegramMessage(
               player.telegramId || player.name,
-              `Поздравляем! Вы получили награду: <b>${escapeHtml(bonusName)}</b>!\n<i>${escapeHtml(bonusDesc)}</i>`
+              `Поздравляем! Вы получили награду: <b>${escapeHtml(bonusName)}</b>!\n<i>${escapeHtml(cell.description)}</i>`
             );
           }
 
@@ -3615,10 +3633,15 @@ async function start() {
 
       saveState();
       broadcastSlices("players", "logs", "meta");
+      } catch (err) {
+        log.error("roll:request crashed", { error: String(err) });
+        socket.emit("error", "Сбой броска. Попробуйте ещё раз.");
+      }
     });
 
     // DropBox Pick Handler
     socket.on("dropbox:pick", (payload?: { boxIndex: number }) => {
+      try {
       const player = gameState.players.find((p) => p.id === authPlayerId);
       if (!player || !player.pendingDropBox) return;
 
@@ -3632,40 +3655,6 @@ async function start() {
         const jump = chosen.value || 2;
         player.cell = Math.min(64, player.cell + jump);
         resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Ускорение на +${jump} кл.!`;
-        if (player.cell >= 64) {
-          triggerPlayerVictory(player, false);
-        } else {
-          const landed = gameState.cells.find((c) => c.id === player.cell);
-          if (landed && (landed.type === CellType.FLASK || landed.type === CellType.BITCOIN)) {
-            const hadOldBonus = !!player.activeBonus;
-            const bonusObj: NonNullable<Player["activeBonus"]> = {
-              name: landed.name,
-              extra: landed.extra || "",
-              description: landed.description,
-              value: landed.value,
-              cellId: landed.id,
-              receivedAt: Date.now(),
-            };
-            player.activeBonus = bonusObj;
-            const bonusName = bonusObj.extra || bonusObj.name;
-            pushPrize(player, player.activeBonus);
-            io.emit("event:trigger", {
-              title: landed.name,
-              description: landed.description,
-              playerName: shownName(player),
-              type: landed.type,
-              playerId: player.id,
-            });
-            const prizeMsg = `🎉 Игрок <b>${escapeHtml(player.name)}</b> получил награду: ${escapeHtml(bonusName)}!${hadOldBonus ? " <i>(Предыдущий бонус заменен, призы не суммируются)</i>" : ""}`;
-            void sendTelegramMessageToAdmin(prizeMsg);
-            if (player.telegramId || player.name) {
-              sendTelegramMessage(
-                player.telegramId || player.name,
-                `Поздравляем! Вы получили награду: <b>${escapeHtml(bonusName)}</b>!\n<i>${escapeHtml(landed.description)}</i>`
-              );
-            }
-          }
-        }
       } else if (chosen.type === "promo") {
         const prizeRecord: PrizeRecord = {
           at: Date.now(),
@@ -3708,8 +3697,36 @@ async function start() {
         allOptions: options,
       });
 
+      attachRpgAndMaybeEncounter(socket, player, player.cell);
+
       saveState();
       broadcastSlices("players", "logs");
+      } catch (err) {
+        log.error("dropbox:pick crashed", { error: String(err) });
+        socket.emit("error", "Сбой кейса. Попробуйте ещё раз.");
+      }
+    });
+
+    socket.on("encounter:choose", (payload?: { choiceId?: string }) => {
+      try {
+      const player = gameState.players.find((p) => p.id === authPlayerId);
+      if (!player || !player.pendingEncounter || player.pendingEncounter.resolved) return;
+      const choiceId = typeof payload?.choiceId === "string" ? payload.choiceId : "fight";
+      const session = resolveEncounterChoice(player, choiceId, cryptoDice);
+      player.pendingEncounter = session;
+      socket.emit("encounter:resolved", session);
+      addLog({
+        id: "rpg_" + Date.now(),
+        message: `⚔ ${shownName(player)}: ${session.resultMessage || "событие"}`,
+        timestamp: new Date().toLocaleTimeString(),
+        type: "system",
+      });
+      saveState();
+      broadcastSlices("players", "logs");
+      } catch (err) {
+        log.error("encounter:choose crashed", { error: String(err) });
+        socket.emit("error", "Сбой события. Попробуйте ещё раз.");
+      }
     });
 
     // Admin manual adjust player
@@ -3994,10 +4011,6 @@ async function start() {
       const targetId = isAdmin && typeof pId === "string" && pId ? pId : authPlayerId;
       const player = gameState.players.find((p) => p.id === targetId);
       if (player) {
-        if (!isAdmin && player.cell < 64) {
-          socket.emit("error", "Начать новый круг можно только после достижения финиша (клетка 64).");
-          return;
-        }
         const fromLap = player.cell;
         player.cell = 0;
         player.skipNextTurn = false;

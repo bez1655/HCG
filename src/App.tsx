@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { GameState, DropBoxOption } from "./types";
+import { GameState, DropBoxOption, RpgEncounterSession } from "./types";
 import { playSound } from "./utils/sounds";
 import { setLocale, detectLocale } from "./i18n";
 import { apiFetch, socketUrl, TELEGRAM_LOGIN_ENABLED } from "./config/api";
@@ -10,6 +10,8 @@ import BoardView from "./components/BoardView";
 import AdminConsole from "./components/AdminConsole";
 import PopupCard from "./components/PopupCard";
 import DropBoxModal from "./components/DropBoxModal";
+import RpgEncounterModal from "./components/RpgEncounterModal";
+import { DICE_CARD_DELAY_MS } from "./components/DiceRoll";
 import TurnOutcomeCard, { TurnOutcome } from "./components/TurnOutcomeCard";
 import ToastManager from "./components/ToastManager";
 import CrashGuard from "./components/CrashGuard";
@@ -82,6 +84,27 @@ export default function App() {
     chosen: DropBoxOption;
     allOptions: DropBoxOption[];
   } | null>(null);
+  const [encounter, setEncounter] = useState<RpgEncounterSession | null>(null);
+  const overlayTimersRef = useRef<number[]>([]);
+  const diceSpinRef = useRef(false);
+
+  const clearOverlayTimers = () => {
+    for (const t of overlayTimersRef.current) window.clearTimeout(t);
+    overlayTimersRef.current = [];
+  };
+
+  /** Delay only while the dice overlay is spinning. */
+  const afterDiceOrNow = (fn: () => void) => {
+    if (!diceSpinRef.current) {
+      fn();
+      return;
+    }
+    const id = window.setTimeout(() => {
+      diceSpinRef.current = false;
+      fn();
+    }, DICE_CARD_DELAY_MS);
+    overlayTimersRef.current.push(id);
+  };
   // Dice value decided by the server for this client (drives the 3D animation).
   const [pendingRoll, setPendingRoll] = useState<number | null>(null);
   // Последняя ошибка от сервера. Показывается плашкой поверх игры вместо
@@ -349,7 +372,10 @@ export default function App() {
 
     // Authoritative dice result from the server.
     newSocket.on("roll:result", (data: { steps: number }) => {
-      if (typeof data?.steps === "number") setPendingRoll(data.steps);
+      if (typeof data?.steps === "number") {
+        diceSpinRef.current = true;
+        setPendingRoll(data.steps);
+      }
     });
 
     /*
@@ -364,22 +390,32 @@ export default function App() {
      */
     newSocket.on("turn:outcome", (data: TurnOutcome) => {
       if (!data || typeof data.title !== "string") return;
-      window.setTimeout(() => {
+      afterDiceOrNow(() => {
         setTurnOutcome(data);
         playSound(data.tone === "bad" ? "error" : "level_up");
-      }, 1400);
+      });
     });
 
     newSocket.on("dropbox:available", (data: { cellId: number; options: DropBoxOption[] }) => {
       setTurnOutcome(null);
-      window.setTimeout(() => {
+      afterDiceOrNow(() => {
         setDropBoxSession(data);
         setDropBoxResult(null);
-      }, 400);
+      });
     });
 
     newSocket.on("dropbox:result", (data: { chosen: DropBoxOption; allOptions: DropBoxOption[] }) => {
       setDropBoxResult(data);
+    });
+
+    newSocket.on("encounter:available", (data: RpgEncounterSession) => {
+      if (!data || !data.type) return;
+      setTurnOutcome(null);
+      afterDiceOrNow(() => setEncounter(data));
+    });
+    newSocket.on("encounter:resolved", (data: RpgEncounterSession) => {
+      if (!data) return;
+      setEncounter(data);
     });
 
     // Last-resort deadline. Do NOT wipe the session: Telegram Mini App would
@@ -435,6 +471,7 @@ export default function App() {
        * перезапуска.
        */
       console.error("[HCG] Ошибка сервера:", msg);
+      clearOverlayTimers();
       setPendingRoll(null);
       setServerError(msg);
       playSound("error");
@@ -442,6 +479,7 @@ export default function App() {
 
     return () => {
       clearTimeout(stateDeadline);
+      clearOverlayTimers();
       newSocket.disconnect();
     };
     // Re-create the connection once the user logs in (a token becomes available).
@@ -513,6 +551,12 @@ export default function App() {
   const handlePickDropBox = (boxIndex: number) => {
     if (socket && userId) {
       socket.emit("dropbox:pick", { boxIndex });
+    }
+  };
+
+  const handleEncounterChoice = (choiceId: string) => {
+    if (socket && userId) {
+      socket.emit("encounter:choose", { choiceId });
     }
   };
 
@@ -746,6 +790,14 @@ export default function App() {
             setDropBoxSession(null);
             setDropBoxResult(null);
           }}
+        />
+      )}
+
+      {!dropBoxSession && encounter && (
+        <RpgEncounterModal
+          session={encounter}
+          onChoose={handleEncounterChoice}
+          onClose={() => setEncounter(null)}
         />
       )}
 

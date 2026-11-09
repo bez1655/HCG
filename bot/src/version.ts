@@ -8,18 +8,22 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-11-06.1";
+export const BUILD = "2026-11-08.8";
 export const FEATURES = [
-  "movie character aliases (195 popular film heroes)",
-  "movie character alias swap on login",
+  "bot /start /help /hero in Russian: 1 purchase = 1 turn, boss 63, shop finish 64",
+  "tabletop RPG cards on cells 6/10/16/20/26/32/36/44/48/50/58/63, finish 64 shop only",
+  "loyalty credits are cosmetic — never buy turns or inventory",
+  "server D20 for encounters, original floor aliases",
   "inventory shield dice magnet, fever, drop boxes, skins, gifts, haptics",
-  "board FPS: no ambient blur, no particle canvas, eco default on phones",
+  "board FPS: no ambient blur, no particle canvas, eco default off so board video plays",
   "neon magnet prize attractor and luck streak fever mode x2",
   "auto-gift cyber-gear for batch purchases and admin quick-grant controls",
   "custom cyber-chip skins and neon aura customisation",
   "cyber-inventory (shield firewall and loaded dice chips)",
   "cyber-drop 3-box interactive choice",
   "tactile telegram haptic feedback and token neon trails",
+  "horror alias swap on next login",
+  "halloween chips and horror aliases",
   "turn request journal",
   "public origin hapstore.cyber-game.online",
   "login is current @ only, cannot type someone else's handle",

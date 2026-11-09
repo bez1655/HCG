@@ -1,7 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
 import { Cell, CellType, Player } from "../types";
-import PlayerToken from "./PlayerToken";
 
 interface CellComponentProps {
   cell: Cell;
@@ -166,28 +165,6 @@ const CellComponent = React.memo(
           />
         )}
 
-        {/* Player Tokens */}
-        {hasPlayersOnCell.length > 0 && (
-          <div
-            className={`absolute flex flex-wrap gap-0.5 w-[40px] z-30 pointer-events-none justify-center items-center ${calibrationMode ? "-top-3 -right-3" : ""}`}
-          >
-            {hasPlayersOnCell.map((player, pIdx) => {
-              const isActionCell =
-                cell.type === CellType.BONUS ||
-                cell.type === CellType.PENALTY ||
-                cell.type === CellType.SNAKE ||
-                cell.type === CellType.BITCOIN;
-              return (
-                <PlayerToken
-                  key={player.id}
-                  player={player}
-                  pIdx={pIdx}
-                  isActionCell={isActionCell}
-                />
-              );
-            })}
-          </div>
-        )}
       </motion.div>
     );
   }

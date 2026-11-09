@@ -49,11 +49,9 @@ export interface Player {
    * купивший товар, больше не раскрывает свой аккаунт другим участникам.
    */
   alias?: string;
-  /** Previous public alias, kept after rename. */
+  /** Previous public alias, kept after the Halloween rename. */
   previousAlias?: string;
-  /** Movie character name reserved until the player next opens the game. */
-  pendingMovieAlias?: string;
-  /** Legacy field for pending alias migration. */
+  /** Horror name reserved until the player next opens the game. */
   pendingHorrorAlias?: string;
   role: "admin" | "player";
   cell: number;
@@ -113,6 +111,83 @@ export interface Player {
   lapsCompleted?: number;
   /** Active drop box session awaiting player's choice */
   pendingDropBox?: DropBoxSession | null;
+  /** Tabletop class. Cosmetic + one combat check, never extra turns. */
+  characterClass?: CharacterClass;
+  characterLevel?: number;
+  characterExp?: number;
+  characterStats?: CharacterStats;
+  loyaltyRank?: LoyaltyRank;
+  /** Lifetime approved purchases (1 item = 1 turn granted). Drives shop discount. */
+  purchaseCount?: number;
+  /** Display-only loyalty points. Cannot buy turns or inventory. */
+  loyaltyCredits?: number;
+  pendingEncounter?: RpgEncounterSession | null;
+  /** +1 on the next server D20 check (from the floor clerk). Not a turn. */
+  pendingCheckBonus?: number;
+}
+
+export type CharacterClass = "picker" | "courier" | "clerk" | "analyst";
+
+export type LoyaltyRank = "intern" | "operative" | "veteran" | "master" | "legend";
+
+export interface CharacterStats {
+  str: number;
+  int: number;
+  lck: number;
+}
+
+export type EncounterType = "boss" | "quest" | "merchant";
+
+export interface BossEncounter {
+  id: string;
+  name: string;
+  district: string;
+  description: string;
+  weakness: keyof CharacterStats;
+  dc: number;
+  rewardExp: number;
+  rewardCredits: number;
+}
+
+export interface QuestChoice {
+  id: string;
+  text: string;
+  stat: keyof CharacterStats;
+  dc: number;
+  successText: string;
+  failText: string;
+  successExp: number;
+  successCredits: number;
+}
+
+export interface QuestEncounter {
+  id: string;
+  title: string;
+  description: string;
+  choices: QuestChoice[];
+}
+
+export interface MerchantChoice {
+  id: string;
+  text: string;
+}
+
+export interface MerchantEncounter {
+  id: string;
+  name: string;
+  welcomeText: string;
+  choices: MerchantChoice[];
+}
+
+export interface RpgEncounterSession {
+  cellId: number;
+  type: EncounterType;
+  boss?: BossEncounter;
+  quest?: QuestEncounter;
+  merchant?: MerchantEncounter;
+  resolved?: boolean;
+  resultMessage?: string;
+  lastRoll?: number;
 }
 
 export interface DropBoxOption {

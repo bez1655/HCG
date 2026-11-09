@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { X, Gift, Award, Sparkles, Check } from "lucide-react";
 import { GameState, Player, PrizeRecord } from "../types";
+import { CLASS_LABEL, RANK_LABEL, ensurePlayerRpg } from "../game/encounters";
+import { getLoyaltyDiscountPercent, loyaltyPerkLine, DISCOUNT_TABLE_TEXT } from "../game/loyalty";
 import { getPlayerAchievements } from "../utils/achievements";
 import PlayerAchievementBadges from "./PlayerAchievementBadges";
 import ChipImage from "./ChipImage";
@@ -23,7 +25,8 @@ export default function PlayerCabinet({
   onClose,
   onUpdateSkin,
 }: PlayerCabinetProps) {
-  const [tab, setTab] = useState<"prizes" | "badges" | "skins">("prizes");
+  const [tab, setTab] = useState<"prizes" | "badges" | "skins" | "hero">("prizes");
+  if (me) ensurePlayerRpg(me);
   const achievements = me ? getPlayerAchievements(me, gameState) : [];
   const rows = [...prizes].reverse();
 
@@ -94,6 +97,21 @@ export default function PlayerCabinet({
           >
             <Sparkles size={12} className="inline mr-1" />
             Облик
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              playSound("click");
+              hapticSelection();
+              setTab("hero");
+            }}
+            className={`flex-1 py-1.5 rounded-lg border text-center transition-all ${
+              tab === "hero"
+                ? "border-[#00ffaa] text-[#00ffaa] bg-[#00ffaa]/10"
+                : "border-white/15 text-white/50 hover:border-white/30"
+            }`}
+          >
+            Герой
           </button>
         </div>
 
@@ -278,6 +296,41 @@ export default function PlayerCabinet({
                 </>
               )}
             </button>
+          </div>
+        )}
+
+        {tab === "hero" && me && (
+          <div className="space-y-2 text-white/80">
+            <div>
+              Класс: <b className="text-[#00ffaa]">{CLASS_LABEL[me.characterClass || "picker"]}</b>
+            </div>
+            <div>
+              Ранг:{" "}
+              <b className="text-[#f5c542]">{RANK_LABEL[me.loyaltyRank || "intern"]}</b>
+              {" · "}
+              скидка {getLoyaltyDiscountPercent(me.purchaseCount || 0)}%
+            </div>
+            <div className="text-white/70">{loyaltyPerkLine(me.purchaseCount || 0)}</div>
+            <div className="text-[10px] text-white/40">{DISCOUNT_TABLE_TEXT}</div>
+            <div>
+              Уровень {me.characterLevel || 1} · XP {me.characterExp || 0} — качай боями и контрактами
+            </div>
+            <div>Репутация сектора: {me.loyaltyCredits || 0}</div>
+            <div className="grid grid-cols-3 gap-2 pt-2">
+              <div className="border border-white/10 rounded p-2 text-center">
+                СИЛ {me.characterStats?.str ?? 0}
+              </div>
+              <div className="border border-white/10 rounded p-2 text-center">
+                ИНТ {me.characterStats?.int ?? 0}
+              </div>
+              <div className="border border-white/10 rounded p-2 text-center">
+                УДЧ {me.characterStats?.lck ?? 0}
+              </div>
+            </div>
+            <p className="text-[10px] text-white/40 pt-1">
+              Покупка открывает ход. Боссы 16 / 32 / 48 / 63 качают героя. Клетка 64 — Ядро и главный
+              приз.
+            </p>
           </div>
         )}
       </div>
