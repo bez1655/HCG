@@ -682,9 +682,29 @@ export default function App() {
   };
 
   const handleApprovePlayerTurn = (pId: string, confirmBonus?: boolean, turns?: number) => {
-    if (socket && userRole === "admin") {
-      socket.emit("admin:approve_player_turn", pId, confirmBonus, turns);
-    }
+    const token = localStorage.getItem("hapstore_token") || "";
+    void apiFetch("/api/admin/approve-turn", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+      body: JSON.stringify({ playerId: pId, confirmBonusUse: !!confirmBonus, turns, token }),
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          playSound("success");
+          return;
+        }
+        if (socket) socket.emit("admin:approve_player_turn", pId, confirmBonus, turns);
+        setServerError(data.error || "Не удалось одобрить ход.");
+        playSound("error");
+      })
+      .catch(() => {
+        if (socket) socket.emit("admin:approve_player_turn", pId, confirmBonus, turns);
+        else setServerError("Нет связи с сервером — ход не одобрен.");
+      });
   };
 
   const handleConsumeBonus = (pId: string) => {
@@ -714,9 +734,28 @@ export default function App() {
   };
 
   const handleGrantItem = (pId: string, item: "shield" | "loaded_dice" | "magnet") => {
-    if (socket && userRole === "admin") {
-      socket.emit("admin:grant_item", pId, item);
-    }
+    const token = localStorage.getItem("hapstore_token") || "";
+    void apiFetch("/api/admin/grant-item", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+      body: JSON.stringify({ playerId: pId, item, token }),
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          playSound("success");
+          return;
+        }
+        if (socket) socket.emit("admin:grant_item", pId, item);
+        setServerError(data.error || "Не удалось выдать девайс.");
+      })
+      .catch(() => {
+        if (socket) socket.emit("admin:grant_item", pId, item);
+        else setServerError("Нет связи с сервером — девайс не выдан.");
+      });
   };
 
   const handleUpdateSkin = (chipImage: string, color: string) => {
@@ -726,9 +765,25 @@ export default function App() {
   };
 
   const handleRejectPlayerTurn = (pId: string) => {
-    if (socket && userRole === "admin") {
-      socket.emit("admin:reject_player_turn", pId);
-    }
+    const token = localStorage.getItem("hapstore_token") || "";
+    void apiFetch("/api/admin/reject-turn", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+      body: JSON.stringify({ playerId: pId, token }),
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) return;
+        if (socket) socket.emit("admin:reject_player_turn", pId);
+        setServerError(data.error || "Не удалось отклонить ход.");
+      })
+      .catch(() => {
+        if (socket) socket.emit("admin:reject_player_turn", pId);
+        else setServerError("Нет связи с сервером — ход не отклонён.");
+      });
   };
 
   const handleRestartLap = (pId: string) => {

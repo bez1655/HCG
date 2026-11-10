@@ -230,18 +230,17 @@ export default function AdminConsole({
 
   const handleSavePlayer = (pId: string) => {
     const edit = playerEdits[pId];
-    if (!edit) return;
-    const cell = Math.min(64, Math.max(0, Math.floor(Number(edit.cell))));
-    if (!Number.isFinite(cell)) return;
-    playSound("success");
-    onUpdatePlayer({
-      id: pId,
-      cell,
-      name: edit.name,
-      color: edit.color,
-      chipImage: edit.chipImage,
-    });
-    setPlayerEdits((prev) => ({ ...prev, [pId]: { ...edit, cell, dirty: false } }));
+    if (edit) {
+      playSound("success");
+      onUpdatePlayer({
+        id: pId,
+        cell: Number(edit.cell),
+        name: edit.name,
+        color: edit.color,
+        chipImage: edit.chipImage,
+      });
+      setPlayerEdits((prev) => ({ ...prev, [pId]: { ...edit, dirty: false } }));
+    }
   };
 
   const handleCreatePlayer = (e: React.FormEvent) => {
@@ -972,7 +971,7 @@ export default function AdminConsole({
                             <input
                               type="number"
                               min="0"
-                              max="64"
+                              max="60"
                               value={edit.cell}
                               onChange={(e) => handlePlayerEditChange(p.id, "cell", e.target.value)}
                               className="bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-2 text-xs text-[#e0e0e6] w-16 text-center focus:outline-none font-mono"

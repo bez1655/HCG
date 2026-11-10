@@ -545,7 +545,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-08.17";
+const SERVER_BUILD = "2026-11-08.19";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -2702,6 +2702,72 @@ async function start() {
     });
   });
 
+  function isAdminHttpRequest(req: any, bodyToken?: string): boolean {
+    const token =
+      (typeof req.headers.authorization === "string"
+        ? req.headers.authorization.replace(/^Bearer\s+/i, "")
+        : "") ||
+      bodyToken ||
+      "";
+    const session = verifySessionToken(token);
+    if (!session) return false;
+    if (session.role === "admin") return true;
+    const pl = gameState.players.find((p) => p.id === session.sub);
+    if (!pl) return false;
+    if (pl.role === "admin") return true;
+    if (isTelegramAdminHandle(pl.name, DATA_DIR, telegramConfig.adminUsername)) return true;
+    return pl.telegramUsername
+      ? isTelegramAdminHandle(`@${pl.telegramUsername}`, DATA_DIR, telegramConfig.adminUsername)
+      : false;
+  }
+
+  app.post("/api/admin/approve-turn", (req, res) => {
+    if (!isAdminHttpRequest(req, req.body && req.body.token)) {
+      return res.status(403).json({ error: "Одобрить ход может только администратор. Перезайдите в игру кнопкой ИГРАТЬ." });
+    }
+    const playerId = String((req.body && (req.body.playerId || req.body.pId)) || "");
+    if (!playerId) return res.status(400).json({ error: "Не указан игрок." });
+    const result = approveTurn(playerId, {
+      confirmBonusUse: req.body.confirmBonusUse === true,
+      turns: typeof req.body.turns === "number" ? req.body.turns : undefined,
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error || "Не удалось одобрить ход." });
+    saveState();
+    broadcastState();
+    return res.json({ success: true, playerId, turnsApproved: result.player?.turnsApproved ?? 0 });
+  });
+
+  app.post("/api/admin/reject-turn", (req, res) => {
+    if (!isAdminHttpRequest(req, req.body && req.body.token)) {
+      return res.status(403).json({ error: "Отклонить ход может только администратор." });
+    }
+    const playerId = String((req.body && (req.body.playerId || req.body.pId)) || "");
+    if (!playerId) return res.status(400).json({ error: "Не указан игрок." });
+    const result = rejectTurn(playerId);
+    if (!result.ok) return res.status(400).json({ error: result.error || "Не удалось отклонить." });
+    saveState();
+    broadcastState();
+    return res.json({ success: true, playerId });
+  });
+
+  app.post("/api/admin/grant-item", (req, res) => {
+    if (!isAdminHttpRequest(req, req.body && req.body.token)) {
+      return res.status(403).json({ error: "Выдать девайс может только администратор." });
+    }
+    const playerId = String((req.body && (req.body.playerId || req.body.pId)) || "");
+    const item = req.body && req.body.item;
+    if (item !== "shield" && item !== "loaded_dice" && item !== "magnet") {
+      return res.status(400).json({ error: "Неизвестный девайс." });
+    }
+    const player = gameState.players.find((p) => p.id === playerId || p.name === playerId || p.alias === playerId);
+    if (!player) return res.status(404).json({ error: "Игрок не найден." });
+    if (!Array.isArray(player.inventory)) player.inventory = [];
+    player.inventory.push(item);
+    saveState();
+    broadcastState();
+    return res.json({ success: true, playerId: player.id, item });
+  });
+
   app.post("/api/admin/consume-bonus", (req, res) => {
     const token =
       (typeof req.headers.authorization === "string"
@@ -2709,8 +2775,7 @@ async function start() {
         : "") ||
       (req.body && req.body.token) ||
       "";
-    const session = verifySessionToken(token);
-    if (!session || session.role !== "admin") {
+    if (!isAdminHttpRequest(req, token)) {
       return res.status(403).json({ error: "Списать бонус может только администратор." });
     }
     const needle = String((req.body && (req.body.playerId || req.body.pId)) || "");
@@ -2729,6 +2794,47 @@ async function start() {
     saveState();
     broadcastState();
     return res.json({ success: true, playerId: player.id, label });
+  });
+
+  app.post("/api/admin/set-player-cell", (req, res) => {
+    const token =
+      (typeof req.headers.authorization === "string"
+        ? req.headers.authorization.replace(/^Bearer\s+/i, "")
+        : "") ||
+      (req.body && req.body.token) ||
+      "";
+    if (!isAdminHttpRequest(req, token)) {
+      return res.status(403).json({ error: "Перенести фишку может только администратор. Перезайдите кнопкой ИГРАТЬ." });
+    }
+    const needle = String((req.body && (req.body.playerId || req.body.id)) || "");
+    const cellRaw = req.body && req.body.cell;
+    const cell = Math.min(64, Math.max(0, Math.floor(Number(cellRaw))));
+    if (!needle) return res.status(400).json({ error: "Не указан игрок." });
+    if (!Number.isFinite(cell)) return res.status(400).json({ error: "Некорректная клетка." });
+    const player = gameState.players.find(
+      (p) => p.id === needle || p.name === needle || p.alias === needle
+    );
+    if (!player) return res.status(404).json({ error: "Игрок не найден." });
+    const oldCell = player.cell;
+    player.cell = cell;
+    addLog({
+      id: "admin_cell_" + Date.now(),
+      message: `🛠️ Админ переставил ${shownName(player)}: ${oldCell} ➔ ${cell}.`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: "admin",
+    });
+    if (oldCell !== cell) {
+      recordPlayerMove(player, {
+        kind: "admin",
+        fromCell: oldCell,
+        toCell: cell,
+        steps: null,
+        note: "админ переставил фишку",
+      });
+    }
+    saveState();
+    broadcastState();
+    return res.json({ success: true, playerId: player.id, cell, oldCell });
   });
 
   app.get("/api/admin/player-prizes", requireInternalAuth, (req, res) => {
@@ -2868,14 +2974,21 @@ async function start() {
         if (color) existingPlayer.color = color;
         if (claimedTgId && !existingPlayer.telegramId) existingPlayer.telegramId = claimedTgId;
         saveState();
+        const loginAdmin =
+          existingPlayer.role === "admin" ||
+          isTelegramAdminHandle(existingPlayer.name, DATA_DIR, telegramConfig.adminUsername) ||
+          (existingPlayer.telegramUsername
+            ? isTelegramAdminHandle(`@${existingPlayer.telegramUsername}`, DATA_DIR, telegramConfig.adminUsername)
+            : false);
+        const loginRole = loginAdmin ? "admin" : "player";
         return res.json({
           success: true,
           name: existingPlayer.name,
-          role: "player",
+          role: loginRole,
           color: existingPlayer.color,
           chipImage: existingPlayer.chipImage,
           id: existingPlayer.id,
-          token: issueSessionToken(existingPlayer.id, "player"),
+          token: issueSessionToken(existingPlayer.id, loginRole),
         });
       }
 
@@ -2900,7 +3013,14 @@ async function start() {
 
   io.on("connection", (socket) => {
     const authPlayerId: string = socket.data.playerId;
-    const isAdmin = socket.data.role === "admin";
+    const connectedPlayer = gameState.players.find((p) => p.id === authPlayerId);
+    const isAdmin =
+      socket.data.role === "admin" ||
+      connectedPlayer?.role === "admin" ||
+      isTelegramAdminHandle(connectedPlayer?.name, DATA_DIR, telegramConfig.adminUsername) ||
+      (connectedPlayer?.telegramUsername
+        ? isTelegramAdminHandle(`@${connectedPlayer.telegramUsername}`, DATA_DIR, telegramConfig.adminUsername)
+        : false);
     log.debug("Client connected", {
       socket: socket.id,
       player: authPlayerId,
@@ -4405,7 +4525,7 @@ async function start() {
 
     // Admin directly grants a cyber-gear item (Shield, Loaded Dice or Magnet) to a player
     socket.on("admin:grant_item", (pId: string, item: "shield" | "loaded_dice" | "magnet") => {
-      if (!isAdmin) return;
+      if (!isAdmin) { socket.emit("error", "Нет прав администратора."); return; }
       if (item !== "shield" && item !== "loaded_dice" && item !== "magnet") return;
       const needle = (pId || "").toLowerCase();
       const player = gameState.players.find(
@@ -4453,7 +4573,7 @@ async function start() {
     socket.on(
       "admin:approve_player_turn",
       (pId: string, confirmBonusUse?: boolean, turns?: number) => {
-        if (!isAdmin) return;
+        if (!isAdmin) { socket.emit("error", "Нет прав администратора. Перезайдите кнопкой ИГРАТЬ в боте."); return; }
         const result = approveTurn(pId, { confirmBonusUse, turns });
         if (!result.ok && result.error) socket.emit("error", result.error);
       }
@@ -4461,7 +4581,7 @@ async function start() {
 
     // Admin rejects specific player turn
     socket.on("admin:reject_player_turn", (pId: string) => {
-      if (!isAdmin) return;
+      if (!isAdmin) { socket.emit("error", "Нет прав администратора."); return; }
       rejectTurn(pId);
     });
 

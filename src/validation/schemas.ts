@@ -155,8 +155,8 @@ export const chatSendSchema = z.object({
 
 export const updatePlayerSchema = z.object({
   id: playerId,
-  cell: z.coerce.number().int().min(0).max(64),
-  color: z.string().max(32).optional(),
+  cell: z.number().int().min(0).max(64),
+  color: hexColor.optional(),
   name: z.string().trim().min(1).max(64).optional(),
   chipImage: z.string().max(256).optional(),
 });
