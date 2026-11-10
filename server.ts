@@ -545,7 +545,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-08.19";
+const SERVER_BUILD = "2026-11-08.20";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1049,7 +1049,10 @@ function approveTurn(
 
   const needle = playerId.toLowerCase();
   const player = gameState.players.find(
-    (p) => p.id === playerId || p.name.toLowerCase() === needle
+    (p) =>
+      p.id === playerId ||
+      p.name.toLowerCase() === needle ||
+      (p.alias || "").toLowerCase() === needle
   );
   if (!player) return { ok: false, error: "Игрок не найден" };
 
@@ -1207,7 +1210,10 @@ function approveTurn(
 function rejectTurn(playerId: string, rejectedBy?: string): ApproveTurnResult {
   const needle = playerId.toLowerCase();
   const player = gameState.players.find(
-    (p) => p.id === playerId || p.name.toLowerCase() === needle
+    (p) =>
+      p.id === playerId ||
+      p.name.toLowerCase() === needle ||
+      (p.alias || "").toLowerCase() === needle
   );
   if (!player) return { ok: false, error: "Игрок не найден" };
 
