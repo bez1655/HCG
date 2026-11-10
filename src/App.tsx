@@ -599,10 +599,13 @@ export default function App() {
     cell: number;
     color: string;
     name: string;
+    chipImage?: string;
   }) => {
-    if (socket && userRole === "admin") {
-      socket.emit("admin:update_player", player);
+    if (!socket || userRole !== "admin") {
+      setServerError("Нет прав или связи — фишку не переставить.");
+      return;
     }
+    socket.emit("admin:update_player", player);
   };
 
   const handleRegisterPlayer = (reg: { name: string; color: string; password?: string }) => {

@@ -545,7 +545,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-08.16";
+const SERVER_BUILD = "2026-11-08.17";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -3756,18 +3756,25 @@ async function start() {
 
     // Admin manual adjust player
     socket.on("admin:update_player", (raw: unknown) => {
-      if (!isAdmin) return;
+      if (!isAdmin) {
+        socket.emit("error", "Нет прав администратора для переноса фишки.");
+        return;
+      }
       const parsed = validate(updatePlayerSchema, raw);
       if (!parsed.ok) {
-        socket.emit("error", parsed.error);
+        socket.emit("error", parsed.error || "Не удалось сохранить игрока.");
         return;
       }
       const updated = parsed.data;
       const p = gameState.players.find((pl) => pl.id === updated.id);
-      if (p) {
+      if (!p) {
+        socket.emit("error", "Игрок не найден.");
+        return;
+      }
+      {
         const oldCell = p.cell;
-        p.cell = Math.min(64, Math.max(0, updated.cell));
-        if (updated.color) p.color = updated.color;
+        p.cell = Math.min(64, Math.max(0, Math.floor(Number(updated.cell))));
+        if (updated.color && /^#[0-9A-Fa-f]{6}$/.test(updated.color)) p.color = updated.color;
         if (updated.name) p.name = updated.name;
         if (updated.chipImage) p.chipImage = updated.chipImage;
 
