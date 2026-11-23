@@ -131,6 +131,115 @@ show_status() {
   echo
 }
 
+# After a successful deploy: optionally announce the update to all players.
+# Sends through the app container's own internal API (the server composes and
+# delivers the Telegram messages itself), so no secrets leave the server and
+# the bot's /update guard is mirrored here: live build must equal archive build.
+step_update_broadcast() {
+  hdr "РАССЫЛКА ОБ ОБНОВЛЕНИИ"
+
+  if [ ! -t 0 ]; then
+    warn "нет интерактивного ввода — рассылка пропущена (её можно сделать позже командой /update в боте)"
+    return 0
+  fi
+
+  local answer=""
+  printf "  Нужна ли рассылка игрокам о том, что обновление установлено? [y/N] "
+  read -r answer || answer=""
+  case "$answer" in
+    y|Y|yes|YES|д|Д|да|ДА) ;;
+    *)
+      echo "  Рассылка выключена — игроки не получат сообщение об обновлении."
+      echo "  Позже её можно отправить вручную: команда /update в боте."
+      return 0
+      ;;
+  esac
+
+  echo
+  echo "  Введите текст обновления — что нового увидят игроки."
+  echo "  Можно несколько строк; пустая строка — закончить ввод."
+  echo "  Просто Enter без текста — стандартный текст про стабильность и связь."
+  local whats_new="" line=""
+  while true; do
+    printf "  > "
+    read -r line || break
+    [ -z "$line" ] && break
+    whats_new="${whats_new}${line}"$'\n'
+  done
+  whats_new="$(printf '%s' "$whats_new" | sed -e 's/[[:space:]]*$//')"
+  if [ -z "$whats_new" ]; then
+    whats_new="• Игра обновлена до актуальной версии."$'\n'"• Улучшены стабильность и соединение: игра сама переподключается, заново заходить через бота не нужно."
+  fi
+
+  # Expected build = the archive being deployed; live build = /healthz.
+  local expected live
+  expected="$(grep -o 'BUILD = "[^"]*"' "$ROOT/bot/src/version.ts" 2>/dev/null | head -1 | cut -d'"' -f2)"
+  live="$(curl -sf --max-time 5 http://127.0.0.1:3001/healthz 2>/dev/null | grep -o '"build":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  if [ -z "$expected" ] || [ "$live" != "$expected" ]; then
+    bad "сборка сервера («${live:-нет ответа}») не совпадает со сборкой архива («${expected:-?}») — рассылку не отправляю"
+    echo "  Сначала добейтесь совпадения сборок, потом: /update в боте."
+    return 1
+  fi
+  ok "сборка сервера совпадает с архивом: $expected"
+
+  local text
+  text="⚡ Обновление установлено (сборка ${expected})"$'\n\n'"Что нового:"$'\n'"${whats_new}"$'\n\n'"Если игра была открыта — закройте её и откройте кнопкой «ИГРАТЬ». Хороших бросков! 🎲"
+
+  echo "  Отправляю рассылку всем игрокам..."
+  local result
+  result="$(printf '%s' "$text" | docker exec -i hcg_app node -e '
+    let raw = "";
+    process.stdin.on("data", (c) => (raw += c));
+    process.stdin.on("end", async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:3000/api/admin/bot-broadcast", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Internal-Token": process.env.INTERNAL_API_SECRET || "",
+          },
+          body: JSON.stringify({ text: raw, admin: "deploy-script" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          console.log("FAIL " + (data.error || ("HTTP " + res.status)));
+          return;
+        }
+        console.log("OK " + (data.sent ?? 0) + " " + (data.total ?? 0) + " " + ((data.failed || []).join(", ")));
+      } catch (e) {
+        console.log("FAIL " + e.message);
+      }
+    });
+  ' 2>/dev/null)"
+  case "$result" in
+    OK*)
+      local _ok sent total failed
+      read -r _ok sent total failed <<< "$result"
+      ok "рассылка об обновлении отправлена: ${sent} из ${total}"
+      [ -n "${failed:-}" ] && warn "не доставлено: $failed"
+      ;;
+    *)
+      bad "рассылка не ушла: ${result#FAIL }"
+      echo "  Её можно отправить вручную: команда /update в боте."
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+step_import_past_logs() {
+  hdr "ИМПОРТ ИСТОРИЧЕСКИХ ЛОГОВ ЗА ПРОШЕДШИЙ ПЕРИОД"
+  local script="$TARGET/scripts/import-past-logs.sh"
+  if [ ! -f "$script" ]; then
+    script="$ROOT/scripts/import-past-logs.sh"
+  fi
+  if [ -f "$script" ]; then
+    bash "$script" || warn "не удалось собрать исторические логи"
+  else
+    warn "скрипт $script не найден"
+  fi
+}
+
 step_server() {
   echo
   echo "${B}╔══════════════════════════════════════════════════════╗${N}"
@@ -156,6 +265,8 @@ step_server() {
   echo
   if [ "$rc" -eq 0 ]; then
     ok "развёртывание закончено  $(now)"
+    step_import_past_logs || warn "шаг импорта логов завершён с предупреждением"
+    step_update_broadcast || warn "шаг рассылки завершён с предупреждением — развёртывание при этом успешно"
   else
     bad "развёртывание остановилось с кодом $rc  $(now)"
   fi
@@ -246,6 +357,14 @@ step_rebuild() {
   show_status
 }
 
+step_test_deploy() {
+  bash "$HERE/test-server.sh" deploy
+}
+
+step_test_remove() {
+  bash "$HERE/test-server.sh" remove
+}
+
 if [ $# -gt 0 ]; then
   banner
   case "$1" in
@@ -268,6 +387,18 @@ if [ $# -gt 0 ]; then
       ;;
     пакеты|packages)
       bash "$HERE/cleanup-vps.sh" пакеты
+      ;;
+    логи|лог|logs|import-logs|ip-logs)
+      step_import_past_logs
+      ;;
+    тест|test|test-deploy)
+      step_test_deploy
+      ;;
+    тест-удалить|test-remove|test-clean|test-stop)
+      step_test_remove
+      ;;
+    тест-статус|test-status)
+      bash "$HERE/test-server.sh" status
       ;;
     все|всё|all)
       step_server || die "развёртывание не удалось — остальные шаги пропущены"
@@ -300,6 +431,9 @@ while true; do
   ${B}12${N} Пересобрать app + bot
   ${B}13${N} Мусор на VPS (список; удаление — командой сервер-мусор)
   ${B}14${N} Пакеты: найти и отметить к удалению
+  ${B}15${N} Импорт прошлых логов веб-сервера в журнал IP
+  ${B}16${N} Тестовая сборка: развернуть отдельно (/var/www/hcg-test :3000)
+  ${B}17${N} Тестовая сборка: остановить и удалить
   ${B}0${N}  Выход
 
 MENU
@@ -350,6 +484,9 @@ MENU
       bash "$HERE/cleanup-vps.sh"
       ;;
     14) bash "$HERE/cleanup-vps.sh" пакеты ;;
+    15) step_import_past_logs ;;
+    16) step_test_deploy ;;
+    17) step_test_remove ;;
     0|q|Q|выход) echo "  До связи."; echo; exit 0 ;;
     *) warn "нет такого пункта: «$choice»" ;;
   esac

@@ -18,6 +18,7 @@ import PlayerStatusBadge from "./PlayerStatusBadge";
 import PlayerAvatarWithBadges from "./PlayerAvatarWithBadges";
 import PlayerAchievementBadges from "./PlayerAchievementBadges";
 import { turnsLeft, pluralizeTurns } from "../game/rules";
+import { apiFetch } from "../config/api";
 import { isTokenVisible } from "../game/presence";
 
 interface AdminConsoleProps {
@@ -167,6 +168,7 @@ export default function AdminConsole({
     [id: string]: { cell: number; name: string; color: string; chipImage: string; dirty?: boolean };
   }>({});
   const [_passwords, setPasswords] = useState<{ [id: string]: string }>({});
+  const [adminNotice, setAdminNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Password protection status is delivered over the authenticated socket:
   // the admin password is no longer stored in localStorage, and the server
@@ -230,17 +232,43 @@ export default function AdminConsole({
 
   const handleSavePlayer = (pId: string) => {
     const edit = playerEdits[pId];
-    if (edit) {
-      playSound("success");
-      onUpdatePlayer({
-        id: pId,
-        cell: Number(edit.cell),
-        name: edit.name,
-        color: edit.color,
-        chipImage: edit.chipImage,
-      });
-      setPlayerEdits((prev) => ({ ...prev, [pId]: { ...edit, dirty: false } }));
-    }
+    if (!edit) { setAdminNotice({ ok: false, text: "Нет данных строки." }); return; }
+    const cell = Math.min(64, Math.max(0, Math.floor(Number(edit.cell))));
+    if (!Number.isFinite(cell)) { setAdminNotice({ ok: false, text: "Клетка: число 0-64." }); return; }
+    const token = localStorage.getItem("hapstore_token") || "";
+    setAdminNotice({ ok: true, text: "Сохраняю клетку..." });
+    void apiFetch("/api/admin/set-player-cell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
+      body: JSON.stringify({ playerId: pId, cell, token }),
+    }).then(async (r) => {
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) {
+        playSound("success");
+        setAdminNotice({ ok: true, text: `Фишка на клетке ${cell}.` });
+        setPlayerEdits((prev) => ({ ...prev, [pId]: { ...edit, cell, dirty: false } }));
+      } else {
+        playSound("error");
+        setAdminNotice({ ok: false, text: data.error || `Ошибка ${r.status}` });
+        onUpdatePlayer({ id: pId, cell, name: edit.name, color: edit.color, chipImage: edit.chipImage });
+      }
+    }).catch(() => {
+      setAdminNotice({ ok: false, text: "Нет связи с сервером." });
+      onUpdatePlayer({ id: pId, cell, name: edit.name, color: edit.color, chipImage: edit.chipImage });
+    });
+  };
+
+  const approveTurnUi = (pId: string, confirmBonus?: boolean, turns?: number) => {
+    setAdminNotice({ ok: true, text: "Одобряю ход..." });
+    onApprovePlayerTurn?.(pId, confirmBonus, turns);
+  };
+  const rejectTurnUi = (pId: string) => {
+    setAdminNotice({ ok: true, text: "Отклоняю запрос..." });
+    onRejectPlayerTurn?.(pId);
+  };
+  const grantItemUi = (pId: string, item: "shield" | "loaded_dice" | "magnet") => {
+    setAdminNotice({ ok: true, text: "Выдаю девайс..." });
+    onGrantItem?.(pId, item);
   };
 
   const handleCreatePlayer = (e: React.FormEvent) => {
@@ -304,6 +332,15 @@ export default function AdminConsole({
     >
       <div className="fixed inset-0 bg-[radial-gradient(rgba(0,255,234,0.04)_1px,transparent_1px)] bg-[size:36px_36px] pointer-events-none z-0" />
 
+      {adminNotice && (
+        <div
+          className={`sticky top-0 z-[90] px-4 py-3 text-center font-mono text-sm cursor-pointer ${adminNotice.ok ? "bg-emerald-950 text-emerald-200" : "bg-red-950 text-red-100"}`}
+          onClick={() => setAdminNotice(null)}
+          role="status"
+        >
+          {adminNotice.text}
+        </div>
+      )}
       <header className="w-full border-b border-[#00ffea]/20 bg-[#0B0E14]/95 p-4 sm:p-6 px-6 sm:px-8 flex flex-col md:flex-row justify-between items-center gap-4 z-30 sticky top-0 shrink-0">
         <div className="brand flex flex-col">
           <h1 className="font-syne text-2xl font-black uppercase tracking-tight text-transparent bg-gradient-to-r from-[#00ffea] to-[#ffb020] bg-clip-text">
@@ -971,7 +1008,7 @@ export default function AdminConsole({
                             <input
                               type="number"
                               min="0"
-                              max="60"
+                              max="64"
                               value={edit.cell}
                               onChange={(e) => handlePlayerEditChange(p.id, "cell", e.target.value)}
                               className="bg-[#0d0d0f] border border-[rgba(224,224,230,0.1)] rounded-sm p-2 text-xs text-[#e0e0e6] w-16 text-center focus:outline-none font-mono"
@@ -998,6 +1035,9 @@ export default function AdminConsole({
                               </div>
                             ) : (
                               <span className="text-[10px] text-[#e0e0e6]/30 font-mono">Нет</span>
+                            )}
+                            {(p.prizeLog?.length ?? 0) > 0 && (
+                              <div className="mt-1 text-[8px] text-yellow-200/70 font-mono">Кабинет: {p.prizeLog!.length}</div>
                             )}
                           </td>
                           {/* Inventory & Quick Grants */}
@@ -1028,7 +1068,7 @@ export default function AdminConsole({
                                   type="button"
                                   onClick={() => {
                                     playSound("click");
-                                    onGrantItem?.(p.id, "shield");
+                                    grantItemUi(p.id, "shield");
                                   }}
                                   className="btn py-0.5 px-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded text-[9px] cursor-pointer transition flex items-center gap-0.5 font-mono"
                                   title="Выдать +1 Щит «Файрвол» игроку"
@@ -1039,7 +1079,7 @@ export default function AdminConsole({
                                   type="button"
                                   onClick={() => {
                                     playSound("click");
-                                    onGrantItem?.(p.id, "loaded_dice");
+                                    grantItemUi(p.id, "loaded_dice");
                                   }}
                                   className="btn py-0.5 px-1.5 bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 border border-purple-500/30 rounded text-[9px] cursor-pointer transition flex items-center gap-0.5 font-mono"
                                   title="Выдать +1 «Заряженный кубик» игроку"
@@ -1050,7 +1090,7 @@ export default function AdminConsole({
                                   type="button"
                                   onClick={() => {
                                     playSound("click");
-                                    onGrantItem?.(p.id, "magnet");
+                                    grantItemUi(p.id, "magnet");
                                   }}
                                   className="btn py-0.5 px-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/30 rounded text-[9px] cursor-pointer transition flex items-center gap-0.5 font-mono"
                                   title="Выдать +1 «Неоновый магнит» игроку"
@@ -1084,7 +1124,7 @@ export default function AdminConsole({
                                   <button
                                     onClick={() => {
                                       playSound("success");
-                                      onApprovePlayerTurn?.(p.id, !!p.activeBonus, turnsFor(p));
+                                      approveTurnUi(p.id, !!p.activeBonus, turnsFor(p));
                                     }}
                                     className="btn py-1 px-2 bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30 hover:bg-[#00ffea]/20 rounded-sm text-[8px] cursor-pointer uppercase"
                                     title="Заменить остаток новым количеством"
@@ -1094,7 +1134,7 @@ export default function AdminConsole({
                                   <button
                                     onClick={() => {
                                       playSound("click");
-                                      onRejectPlayerTurn?.(p.id);
+                                      rejectTurnUi(p.id);
                                     }}
                                     className="btn py-1 px-1.5 bg-[#ff007f]/10 text-[#ff007f] border border-[#ff007f]/30 hover:bg-[#ff007f]/20 rounded-sm cursor-pointer"
                                     title="Снять одобрение полностью"
@@ -1120,7 +1160,7 @@ export default function AdminConsole({
                                         setBonusConfirmPlayer(p);
                                       } else {
                                         playSound("success");
-                                        onApprovePlayerTurn?.(p.id, false, turnsFor(p));
+                                        approveTurnUi(p.id, false, turnsFor(p));
                                       }
                                     }}
                                     className="btn py-1 px-2.5 bg-[#00ffea]/10 text-[#00ffea] border border-[#00ffea]/30 hover:bg-[#00ffea]/20 rounded-sm text-[9px] cursor-pointer flex items-center gap-1"
@@ -1134,7 +1174,7 @@ export default function AdminConsole({
                                   <button
                                     onClick={() => {
                                       playSound("click");
-                                      onRejectPlayerTurn?.(p.id);
+                                      rejectTurnUi(p.id);
                                     }}
                                     className="btn py-1 px-1.5 bg-[#ff007f]/10 text-[#ff007f] border border-[#ff007f]/30 hover:bg-[#ff007f]/20 rounded-sm cursor-pointer"
                                     title="Отклонить"
@@ -1157,7 +1197,7 @@ export default function AdminConsole({
                                       setBonusConfirmPlayer(p);
                                     } else {
                                       playSound("success");
-                                      onApprovePlayerTurn?.(p.id, false, turnsFor(p));
+                                      approveTurnUi(p.id, false, turnsFor(p));
                                     }
                                   }}
                                   className="btn py-1 px-2 bg-[#151518] hover:bg-white/5 text-[#e0e0e6]/80 border border-[rgba(224,224,230,0.1)] rounded-sm text-[8px] cursor-pointer transition flex items-center gap-1"
@@ -1266,7 +1306,7 @@ export default function AdminConsole({
                 type="button"
                 onClick={() => {
                   playSound("success");
-                  onApprovePlayerTurn?.(bonusConfirmPlayer.id, true, turnsFor(bonusConfirmPlayer));
+                  approveTurnUi(bonusConfirmPlayer.id, true, turnsFor(bonusConfirmPlayer));
                   setBonusConfirmPlayer(null);
                 }}
                 className="w-full btn py-2.5 px-3 bg-[#00ffea] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffea]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)]"

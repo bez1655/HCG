@@ -70,7 +70,7 @@ if [ -z "$PLAYER_ID" ]; then
         const ps=(JSON.parse(s||"{}").players)||[];
         const n=parseInt(inp,10);
         if(Number.isFinite(n) && String(n)===inp && ps[n-1]) console.log(ps[n-1].id);
-        else console.log(inp);
+        else { const f=ps.find(p=>(p.name||"").toLowerCase()===inp.toLowerCase()); console.log(f?f.id:inp); }
       } catch { console.log(inp); }
     });
   ')" 
@@ -86,6 +86,18 @@ if [ -z "${3:-}" ]; then
 fi
 
 echo "playerId=$PLAYER_ID cell=$CELL turns=$TURNS"
+
+say "5b. Served client bundle (is the new admin code on the server?)"
+HTML="$(curl -s -m 8 http://127.0.0.1:3001/ || true)"
+echo "$HTML" | grep -oE 'assets/[^"]+\.js' | head -5 || true
+ASSET="$(echo "$HTML" | grep -oE 'assets/[^"]+\.js' | head -1 || true)"
+if [ -n "$ASSET" ]; then
+  curl -s -m 15 "http://127.0.0.1:3001/$ASSET" -o /tmp/hcg-bundle.js || true
+  echo "bundle bytes: $(wc -c < /tmp/hcg-bundle.js 2>/dev/null || echo 0)"
+  for m in "set-player-cell" "approve-turn" "grant-item" "encounter:choose"; do
+    if grep -aq "$m" /tmp/hcg-bundle.js 2>/dev/null; then echo "marker $m: FOUND"; else echo "marker $m: MISSING (old client bundle)"; fi
+  done
+fi
 
 say "6. Mint admin session inside container (token not printed)"
 TOKEN="$(docker exec hcg_app node -e '

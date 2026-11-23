@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_f5" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#330a14"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_f5)" rx="24"/>
+      <circle cx="128" cy="128" r="110" fill="none" stroke="#e11d48" stroke-width="3" opacity="0.6"/>
+      <!-- Flight Suit -->
+      <path d="M50 240 L85 160 L128 175 L171 160 L206 240 Z" fill="#1c0b10" stroke="#e11d48" stroke-width="2.5"/>
+      <!-- Helmet and Visor -->
+      <path d="M85 85 Q128 35 171 85 L168 150 Q128 185 88 150 Z" fill="#2d121b" stroke="#e11d48" stroke-width="2"/>
+      <path d="M96 100 Q128 85 160 100 L156 135 Q128 150 100 135 Z" fill="#e11d48" fill-opacity="0.75" filter="drop-shadow(0 0 10px #e11d48)"/>
+      <line x1="102" y1="115" x2="154" y2="115" stroke="#ffffff" stroke-width="2.5" opacity="0.8"/>
+      <!-- Oxygen Port -->
+      <circle cx="128" cy="160" r="6" fill="#18181b" stroke="#e11d48" stroke-width="1.5"/>
+    </svg>

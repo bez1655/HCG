@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_m4" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#330a14"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_m4)" rx="24"/>
+      <circle cx="128" cy="128" r="110" fill="none" stroke="#e11d48" stroke-width="3" opacity="0.5"/>
+      <!-- Heavy Armor -->
+      <path d="M40 240 L80 160 L128 175 L176 160 L216 240 Z" fill="#1e2024" stroke="#e11d48" stroke-width="3"/>
+      <!-- Titanium Half Head -->
+      <path d="M96 90 L160 90 L152 165 L128 185 L104 165 Z" fill="#71717a"/>
+      <path d="M96 90 L128 90 L128 185 L104 165 Z" fill="#d9a58b"/>
+      <!-- Chrome Plates -->
+      <line x1="128" y1="80" x2="128" y2="185" stroke="#e11d48" stroke-width="2"/>
+      <!-- Glowing Red Optical Sensor -->
+      <circle cx="144" cy="120" r="10" fill="#e11d48" filter="drop-shadow(0 0 10px #e11d48)"/>
+      <circle cx="144" cy="120" r="3" fill="#ffffff"/>
+      <!-- Human Eye -->
+      <ellipse cx="112" cy="120" rx="7" ry="4" fill="#ffffff"/>
+      <circle cx="112" cy="120" r="3" fill="#262626"/>
+      <!-- Heavy Jaw Exhaust -->
+      <rect x="110" y="150" width="36" height="18" rx="4" fill="#18181b" stroke="#e11d48" stroke-width="1.5"/>
+      <line x1="116" y1="159" x2="140" y2="159" stroke="#e11d48" stroke-width="2"/>
+    </svg>

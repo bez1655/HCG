@@ -8,8 +8,10 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-11-08.15";
+export const BUILD = "2026-11-23.29";
 export const FEATURES = [
+  "access & security journal, multi-account IP control, bot /multis /whois /export_ips, historical log import",
+  "deploy-script update broadcast prompt with build guard",
   "bot /start /help /hero in Russian: 1 purchase = 1 turn, boss 63, shop finish 64",
   "tabletop RPG cards on cells 6/10/16/20/26/32/36/44/48/50/58/63, finish 64 shop only",
   "loyalty credits are cosmetic — never buy turns or inventory",
@@ -50,6 +52,7 @@ export const FEATURES = [
   "idle players' tokens fade from the board",
   "player roster export as CSV",
   "admin /all broadcast",
+  "admin /update broadcast: update-installed announcement, guarded by live server build == bot build",
   "admin /proxies from harvester",
   "bot uses direct Telegram; harvester stays",
   "boot prefers newer disk over stale Firestore",

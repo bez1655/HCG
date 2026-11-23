@@ -361,7 +361,13 @@ async function handleRegistrationRequest(ctx: any): Promise<void> {
   if (outcome.notifyAdmins) {
     await notifyAdminsAboutRequest(
       registrationDeps,
-      { handle: outcome.handle, id: ctx.from.id, firstName: ctx.from.first_name },
+      {
+        handle: outcome.handle,
+        id: ctx.from.id,
+        firstName: ctx.from.first_name,
+        warningHtml: outcome.warningHtml,
+        detectedIp: outcome.detectedIp,
+      },
       chatIdFor
     );
   }
@@ -467,7 +473,7 @@ const ADMIN_HELP_TEXT =
   "<b>Команды HCG — администратор</b>\n\n" +
   "<b>Доска</b>\n" +
   "Покупка открывает ход. Героя качают боссы 16/32/48/63. Ядро — 64.\n" +
-  "/hero — уровень, ранг, скидка. Рассылку /all — когда BUILD 08.6 на сервере.\n\n" +
+  "/hero — уровень, ранг, скидка. Рассылка об обновлении — команда /update.\n\n" +
   "<b>Что ждёт решения</b>\n" +
   "/requests — сводка: заявки, запросы ходов, невыданные призы\n" +
   "/pending — заявки на регистрацию с кнопками\n" +
@@ -483,9 +489,14 @@ const ADMIN_HELP_TEXT =
   "   по хендлу: <code>/msg @ivan Ваш приз готов</code>\n" +
   "   псевдоним из двух слов — в кавычках\n" +
   "/all &lt;текст&gt; — написать всем игрокам\n" +
+  "/update [что нового] — рассылка «обновление установлено» (только если сборка сервера = сборке бота)\n" +
   "/proxies — рабочие прокси с парсера\n" +
   "/prizes &lt;кого&gt; — кабинет призов\n" +
   "/report — отчёт за день\n\n" +
+  "<b>Контроль мультиаккаунтов и безопасность</b>\n" +
+  "/multis — поиск мультиаккаунтов и совпадений по IP\n" +
+  "/whois &lt;ник/ID/IP&gt; — досье: IP, заходы и связанные аккаунты\n" +
+  "/export_ips — выгрузка полного журнала заходов (CSV) и отчёта по мультиаккаунтам\n\n" +
   "<b>Журнал и администраторы</b>\n" +
   "/journal [кого] — журнал запросов хода (просил / выдано)\n" +
   "/admin_logs [поиск] — журнал игры\n" +
@@ -563,7 +574,16 @@ bot.command("pending", adminManager.middleware(), async (ctx) => {
     if (!res.ok) return ctx.reply("❌ Не удалось получить список заявок.");
 
     const data = (await res.json()) as {
-      requests?: Array<{ username: string; firstName?: string; requestedAt: number }>;
+      requests?: Array<{
+        username: string;
+        firstName?: string;
+        requestedAt: number;
+        detectedIp?: string;
+        hasMultiMatch?: boolean;
+        isSuspicious?: boolean;
+        warningHtml?: string;
+        matchedCount?: number;
+      }>;
     };
     const requests = data.requests || [];
 
@@ -575,18 +595,24 @@ bot.command("pending", adminManager.middleware(), async (ctx) => {
     await ctx.reply(`📋 <b>Заявок ожидает: ${requests.length}</b>`, { parse_mode: "HTML" });
     for (const r of requests) {
       const when = new Date(r.requestedAt).toLocaleString("ru-RU");
-      await ctx.reply(
+      let card =
         `👤 <b>${escapeHtml(r.username)}</b>\n` +
-          (r.firstName ? `Имя: ${escapeHtml(r.firstName)}\n` : "") +
-          `Заявка от: ${when}`,
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback("✅ ЗАРЕГИСТРИРОВАТЬ", `approve_reg:${r.username}`)],
-            [Markup.button.callback("❌ ОТКАЗАТЬ", `reject_reg:${r.username}`)],
-          ]),
-        }
-      );
+        (r.firstName ? `Имя: ${escapeHtml(r.firstName)}\n` : "") +
+        `Заявка от: ${when}\n`;
+      if (r.warningHtml) {
+        card += `\n${r.warningHtml}\n`;
+      } else if (r.detectedIp) {
+        card += `IP: <code>${escapeHtml(r.detectedIp)}</code>\n`;
+      }
+
+      await ctx.reply(card, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✅ ЗАРЕГИСТРИРОВАТЬ", `approve_reg:${r.username}`)],
+          [Markup.button.callback("❌ ОТКАЗАТЬ", `reject_reg:${r.username}`)],
+          [Markup.button.callback("🔍 WHOIS / ПРОВЕРКА", `whois_user:${r.username}`)],
+        ]),
+      });
     }
   } catch (e: any) {
     return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
@@ -1044,6 +1070,72 @@ bot.command("all", adminManager.middleware(), async (ctx) => {
 });
 
 /**
+ * /update [что нового] — рассылка всем игрокам «обновление установлено».
+ *
+ * Guard first: the live server build (from /healthz) must equal this bot's
+ * BUILD. Announcing an update that is not deployed yet lies to players, so
+ * on a mismatch the command refuses and says which side is stale.
+ */
+bot.command("update", adminManager.middleware(), async (ctx) => {
+  const custom = ctx.message.text.replace(/^\/update(@\S+)?\s*/i, "").trim();
+  const adminName = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
+
+  let serverBuild = "";
+  try {
+    const h = await internalFetch("/healthz");
+    const hd = (await h.json()) as { build?: string };
+    serverBuild = String(hd.build || "");
+  } catch {
+    return ctx.reply("⚠️ Сервер игры не отвечает — рассылку об обновлении не отправляю.");
+  }
+
+  if (serverBuild !== BUILD) {
+    return ctx.reply(
+      `⛔ Рано рассылать: на сервере сборка <b>${escapeHtml(serverBuild || "неизвестна")}</b>, ` +
+        `а бот — <b>${escapeHtml(BUILD)}</b>.\nСначала выложите обновление на сервер, потом /update.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const whatsNew =
+    custom ||
+    "• Ошибка «Нет связи с сервером» при загруженной доске исправлена: игра теперь переподключается сама, заново заходить через бота не нужно.\n" +
+      "• Соединение устойчивее в сетях с VPN и у мобильных операторов.";
+  const text =
+    `⚡ Обновление установлено (сборка ${BUILD})\n\n` +
+    `Что нового:\n${whatsNew}\n\n` +
+    `Если игра была открыта — закройте её и откройте кнопкой «ИГРАТЬ». Хороших бросков! 🎲`;
+
+  try {
+    const res = await internalFetch("/api/admin/bot-broadcast", {
+      method: "POST",
+      body: JSON.stringify({ text, admin: adminName }),
+    });
+    const data = (await res.json()) as {
+      success?: boolean;
+      sent?: number;
+      total?: number;
+      failed?: string[];
+      error?: string;
+    };
+    if (!res.ok || !data.success) {
+      return ctx.reply(`❌ ${escapeHtml(data.error || "Не удалось разослать")}`, {
+        parse_mode: "HTML",
+      });
+    }
+    const failed = data.failed?.length
+      ? `\nНе доставлено: ${escapeHtml(data.failed.join(", "))}`
+      : "";
+    return ctx.reply(
+      `✅ Обновление <b>${escapeHtml(BUILD)}</b> объявлено: разослано <b>${data.sent ?? 0}</b> из <b>${data.total ?? 0}</b>.${failed}`,
+      { parse_mode: "HTML" }
+    );
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
+  }
+});
+
+/**
  * /proxies — живые адреса из парсера. Бот сам ими не пользуется.
  */
 bot.command("proxies", adminManager.middleware(), async (ctx) => {
@@ -1158,6 +1250,242 @@ bot.command("report", adminManager.middleware(), async (ctx) => {
   } catch (e: any) {
     return ctx.reply(`⚠️ ${e.message}`);
   }
+});
+
+/**
+ * /multis — анализ мультиаккаунтов и подозрительных IP-адресов.
+ */
+async function renderMultisSummary(ctx: any, edit = false) {
+  try {
+    const res = await internalFetch("/api/admin/ip-multis");
+    if (!res.ok) return ctx.reply("❌ Не удалось получить данные по мультиаккаунтам с сервера.");
+
+    const data = (await res.json()) as {
+      success?: boolean;
+      totalEntries?: number;
+      uniqueIps?: number;
+      uniqueAccounts?: number;
+      suspiciousCount?: number;
+      clusters?: Array<{
+        ip: string;
+        isSuspicious: boolean;
+        severityLabel: string;
+        description: string;
+        totalEntries: number;
+        lastSeenAt: number;
+        accounts: Array<{
+          username?: string;
+          playerName?: string;
+          status: string;
+          telegramId?: number;
+          totalVisits: number;
+        }>;
+      }>;
+    };
+
+    const clusters = (data.clusters || []).filter((c) => c.isSuspicious);
+
+    let html =
+      `🔍 <b>КОНТРОЛЬ МУЛЬТИАККАУНТОВ И IP</b>\n\n` +
+      `Записей в журнале: <b>${data.totalEntries ?? 0}</b>\n` +
+      `Уникальных IP: <b>${data.uniqueIps ?? 0}</b>\n` +
+      `Подозрительных кластеров: <b>${data.suspiciousCount ?? 0}</b>\n\n`;
+
+    if (clusters.length === 0) {
+      html += `✅ <b>Совпадений IP среди разных аккаунтов не обнаружено.</b>\nВсе игроки и заявки заходят с раздельных IP-адресов.`;
+    } else {
+      html += `🚨 <b>ОБНАРУЖЕНЫ СОВПАДЕНИЯ ПО IP (Топ ${Math.min(clusters.length, 5)}):</b>\n\n`;
+      for (const c of clusters.slice(0, 5)) {
+        html +=
+          `🌐 <b>IP: <code>${escapeHtml(c.ip)}</code></b>\n` +
+          `Статус: ${escapeHtml(c.severityLabel)}\n` +
+          `<i>${escapeHtml(c.description)}</i>\n` +
+          `Аккаунты на этом IP:\n`;
+        for (const a of c.accounts) {
+          const st =
+            a.status === "registered"
+              ? "✅ Игрок"
+              : a.status === "pending"
+                ? "⏳ Заявка"
+                : a.status === "unregistered"
+                  ? "⚠️ Не зарегистрирован"
+                  : "🌐 Браузер";
+          const title = a.playerName || a.username || (a.telegramId ? `ID:${a.telegramId}` : "Гость");
+          html += `• <b>${escapeHtml(title)}</b> [${st}] (визитов: ${a.totalVisits})\n`;
+        }
+        html += `\n`;
+      }
+      if (clusters.length > 5) {
+        html += `<i>... и ещё ${clusters.length - 5} подозрительных IP. Полный список в файле отчёта ниже.</i>\n`;
+      }
+    }
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback("📥 Скачать отчёт по мультиаккаунтам (.txt)", "export_multis")],
+      [Markup.button.callback("📥 Скачать полный журнал IP (.csv)", "export_ip_journal")],
+      [Markup.button.callback("🔄 Обновить анализ", "refresh_multis")],
+    ]);
+
+    if (edit && ctx.callbackQuery) {
+      return ctx.editMessageText(html, { parse_mode: "HTML", ...keyboard });
+    }
+    return ctx.reply(html, { parse_mode: "HTML", ...keyboard });
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
+  }
+}
+
+bot.command("multis", adminManager.middleware(), async (ctx) => {
+  await renderMultisSummary(ctx);
+});
+
+bot.command("multiaccounts", adminManager.middleware(), async (ctx) => {
+  await renderMultisSummary(ctx);
+});
+
+bot.command("audit_ip", adminManager.middleware(), async (ctx) => {
+  await renderMultisSummary(ctx);
+});
+
+async function sendWhoisCard(ctx: any, target: string) {
+  try {
+    const res = await internalFetch(`/api/admin/ip-whois?target=${encodeURIComponent(target)}`);
+    const data = (await res.json()) as {
+      success?: boolean;
+      found?: boolean;
+      summaryText?: string;
+      error?: string;
+    };
+
+    if (!res.ok || !data.success) {
+      return ctx.reply(`❌ ${escapeHtml(data.error || "Не удалось получить досье")}`);
+    }
+
+    return ctx.reply(data.summaryText || "Нет информации.", {
+      parse_mode: "HTML",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("📥 Скачать полный журнал IP (.csv)", "export_ip_journal")],
+      ]),
+    });
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка связи с сервером: ${e.message}`);
+  }
+}
+
+bot.command("whois", adminManager.middleware(), async (ctx) => {
+  const target = ctx.message.text.replace(/^\/whois(@\S+)?\s*/i, "").trim();
+  if (!target) {
+    return ctx.reply(
+      "Использование: /whois <@хендл, Telegram ID или IP>\n" +
+        "Например:\n" +
+        "  /whois @hapalka228\n" +
+        "  /whois 185.120.30.40\n" +
+        "  /whois 123456789"
+    );
+  }
+  await sendWhoisCard(ctx, target);
+});
+
+async function sendIpExportFiles(ctx: any) {
+  await ctx.reply("⏳ Формирую отчёт по мультиаккаунтам и журнал заходов IP…");
+  try {
+    const res = await internalFetch("/api/admin/ip-export");
+    if (!res.ok) return ctx.reply("❌ Не удалось выгрузить данные с сервера.");
+
+    const data = (await res.json()) as {
+      success?: boolean;
+      csv?: string;
+      reportText?: string;
+      totalEntries?: number;
+      uniqueIps?: number;
+      suspiciousCount?: number;
+      generatedAt?: string;
+    };
+
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    // 1. Send analytical report (.txt)
+    if (data.reportText) {
+      await ctx.replyWithDocument(
+        {
+          source: Buffer.from(data.reportText, "utf-8"),
+          filename: `HCG-мультиаккаунты-${stamp}.txt`,
+        },
+        {
+          caption:
+            `🚨 <b>Отчёт по мультиаккаунтам HCG</b>\n` +
+            `Подозрительных кластеров: <b>${data.suspiciousCount ?? 0}</b>\n` +
+            `Сформировано: ${escapeHtml(data.generatedAt || "")}`,
+          parse_mode: "HTML",
+        }
+      );
+    }
+
+    // 2. Send complete CSV journal
+    if (data.csv) {
+      await ctx.replyWithDocument(
+        {
+          source: Buffer.from(data.csv, "utf-8"),
+          filename: `HCG-журнал-IP-доступа-${stamp}.csv`,
+        },
+        {
+          caption:
+            `📋 <b>Полный журнал IP-доступа</b>\n` +
+            `Всего заходов: <b>${data.totalEntries ?? 0}</b>\n` +
+            `Уникальных IP: <b>${data.uniqueIps ?? 0}</b>\n` +
+            `<i>Открывается в Excel и Google Таблицах</i>`,
+          parse_mode: "HTML",
+        }
+      );
+    }
+  } catch (e: any) {
+    return ctx.reply(`⚠️ Ошибка при выгрузке: ${e.message}`);
+  }
+}
+
+bot.command("export_ips", adminManager.middleware(), async (ctx) => {
+  await sendIpExportFiles(ctx);
+});
+
+bot.command("export_ip", adminManager.middleware(), async (ctx) => {
+  await sendIpExportFiles(ctx);
+});
+
+bot.command("ip_journal", adminManager.middleware(), async (ctx) => {
+  await sendIpExportFiles(ctx);
+});
+
+bot.action("export_multis", async (ctx) => {
+  if (!adminManager.isAdmin(ctx.from?.username)) {
+    return ctx.answerCbQuery("⛔ Только админ!", { show_alert: true });
+  }
+  await ctx.answerCbQuery("Готовлю отчёт…");
+  await sendIpExportFiles(ctx);
+});
+
+bot.action("export_ip_journal", async (ctx) => {
+  if (!adminManager.isAdmin(ctx.from?.username)) {
+    return ctx.answerCbQuery("⛔ Только админ!", { show_alert: true });
+  }
+  await ctx.answerCbQuery("Готовлю журнал…");
+  await sendIpExportFiles(ctx);
+});
+
+bot.action("refresh_multis", async (ctx) => {
+  if (!adminManager.isAdmin(ctx.from?.username)) {
+    return ctx.answerCbQuery("⛔ Только админ!", { show_alert: true });
+  }
+  await ctx.answerCbQuery("Обновляю…");
+  await renderMultisSummary(ctx, true);
+});
+
+bot.action(/whois_user:(.+)/, async (ctx) => {
+  if (!adminManager.isAdmin(ctx.from?.username)) {
+    return ctx.answerCbQuery("⛔ Только админ!", { show_alert: true });
+  }
+  const user = ctx.match[1];
+  await ctx.answerCbQuery("Загружаю досье…");
+  await sendWhoisCard(ctx, user);
 });
 
 bot.command("list_admins", adminManager.middleware(), async (ctx) => {

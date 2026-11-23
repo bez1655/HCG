@@ -50,9 +50,12 @@ function cellsWord(n: number): string {
 export function describeEffect(cell: Cell): string {
   switch (cell.type) {
     case CellType.BITCOIN:
-      return `Награда: ${cell.value} кредитов`;
+      return `Приз: скидка ${cell.value}`;
     case CellType.FLASK:
-      return cell.value ? `Энергокристалл: ${cell.value} кредитов` : "Энергокристалл";
+      if (cell.value === 2300) return "Приз: МАЛЫЙ КРИСТАЛЛ (2300)";
+      if (cell.value === 4600) return "Приз: КРИСТАЛЛ (4600)";
+      if (cell.value === 13800) return "Главный приз: МЕГА-КРИСТАЛЛ (13800)";
+      return cell.value ? `Приз: кристалл (${cell.value})` : "Энергокристалл";
     case CellType.BONUS:
       if (cell.value > 0) return `Прыжок вперёд на ${cell.value} ${cellsWord(cell.value)}`;
       return "Дополнительный бросок кубика";

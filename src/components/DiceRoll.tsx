@@ -49,7 +49,7 @@ export const DICE_CARD_DELAY_MS = SPIN_MS + HOLD_MS;
  * single time, not on every render. Nothing here depends on the rolled
  * value — the final angle arrives through the --face custom property.
  */
-const STYLE_ID = "hcg-dice-roll-styles-dm";
+const STYLE_ID = "hcg-dice-roll-styles-hw";
 const CSS = `
 @keyframes hcg-dice-spin {
   0%   { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(0.5); }

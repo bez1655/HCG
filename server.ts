@@ -15,6 +15,8 @@ import {
   ensurePlayerRpg,
   beginEncounter,
   resolveEncounterChoice,
+  CLASS_STATS,
+  CLASS_LABEL,
 } from "./src/game/encounters";
 import { syncPurchaseLoyalty, getLoyaltyDiscountPercent } from "./src/game/loyalty";
 import { keepBetterPrize, isBlockingShopPrize } from "./src/game/prizes";
@@ -85,6 +87,19 @@ import {
   listRequests as listRegistrationRequests,
   persistRegistrations,
 } from "./src/game/registrations";
+import {
+  initAccessJournal,
+  seedBaselineFromPlayers,
+  recordAccess,
+  extractClientIp,
+  analyzeMultiAccounts,
+  getWhois,
+  checkRegistrationMultiMatch,
+  generateMultiAccountsReportText,
+  generateJournalCsv,
+  importLogLines,
+  formatMskTime,
+} from "./src/game/accessJournal";
 import { createLogger, configureLogger, errorContext } from "./src/utils/logger";
 import {
   validate,
@@ -217,6 +232,17 @@ const DATA_DIR = path.isAbsolute(appConfig.dataDir)
   ? appConfig.dataDir
   : path.join(process.cwd(), appConfig.dataDir);
 
+function isAdminPlayer(p?: Player | null): boolean {
+  if (!p) return false;
+  if (p.role === "admin") return true;
+  const handles: (string | null | undefined)[] = [
+    p.name,
+    p.telegramUsername ? `@${p.telegramUsername}` : null,
+    ...(p.previousHandles || []),
+  ];
+  return handles.some((h) => !!h && isTelegramAdminHandle(h, DATA_DIR, telegramConfig.adminUsername));
+}
+
 ensureDir(DATA_DIR);
 
 // Telegram delivery lives in src/telegram/notifier.ts.
@@ -225,6 +251,14 @@ initTelegram(DATA_DIR);
 // Pending registration requests are persisted separately from GameState: they
 // hold Telegram ids, which must never be broadcast to clients.
 initRegistrations(DATA_DIR);
+
+// Access & Security journal + Multi-Account control.
+// Tracks every URL open, visitor, registered player, and uninvited applicant.
+initAccessJournal(
+  DATA_DIR,
+  () => (typeof gameState !== "undefined" && gameState?.players) ? gameState.players : [],
+  () => listRegistrationRequests()
+);
 
 /** Сколько моделей фишек лежит в public/chips/. */
 const CHIP_COUNT = 13;
@@ -545,7 +579,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-08.20";
+const SERVER_BUILD = "2026-11-23.30";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1055,6 +1089,7 @@ function approveTurn(
       (p.alias || "").toLowerCase() === needle
   );
   if (!player) return { ok: false, error: "Игрок не найден" };
+  if (Number(player.cell) >= 64) player.cell = 0;
 
   /*
    * Защита от повторной выдачи по устаревшей кнопке.
@@ -1610,6 +1645,13 @@ async function start() {
 
   hydrateTurnJournal();
   reserveHorrorAliases();
+  seedBaselineFromPlayers();
+
+  // Unstick tokens saved on the finish cell: the lap is done, the next
+  // lap starts at 0. Their grand prize (if unredeemed) stays untouched.
+  for (const p of gameState.players) {
+    if (Number(p.cell) >= 64) p.cell = 0;
+  }
 
   // Load auth passwords from Firestore first, fallback to local file
   let loadedAuthFromFirestore = false;
@@ -1659,6 +1701,7 @@ async function start() {
   // POST /api/internal/telegram-user.
 
   const app = express();
+  app.set("trust proxy", true);
   app.disable("x-powered-by");
 
   const server = http.createServer(app);
@@ -1829,6 +1872,27 @@ async function start() {
 
   // Default body limit is small; only the admin image upload route allows more.
   app.use(express.json({ limit: "128kb" }));
+
+  // Access & Security Journal — log anyone opening the game URL in a browser / link.
+  // Those who are not registered are captured here as guest visitors.
+  app.use((req, res, next) => {
+    if (
+      req.method === "GET" &&
+      (req.path === "/" || req.path === "/index.html" || req.path === "/game")
+    ) {
+      const ip = extractClientIp(req);
+      const userAgent = req.headers["user-agent"] as string | undefined;
+      const referer = req.headers["referer"] as string | undefined;
+      recordAccess({
+        ip,
+        action: "page_view",
+        endpoint: req.originalUrl || req.path,
+        userAgent,
+        referer,
+      });
+    }
+    next();
+  });
 
   // ---------------------------------------------------------------------------
   // CORS for the REST API.
@@ -2074,11 +2138,36 @@ async function start() {
       });
     }
 
+    const clientIp = extractClientIp(req);
+    recordAccess({
+      ip: clientIp,
+      action: "registration_request",
+      endpoint: "/api/internal/registration-request",
+      telegramId,
+      username: handle,
+      firstName,
+    });
+
+    const multiCheck = checkRegistrationMultiMatch(telegramId, handle);
+
     const { result } = addRegistrationRequest({ username: handle, telegramId, chatId, firstName });
     return res.json({
       success: true,
       status: result === "duplicate" ? "already_pending" : "queued",
       username: handle,
+      multiMatch: {
+        hasMatch: multiCheck.hasMatch,
+        isSuspicious: multiCheck.isSuspicious,
+        detectedIp: multiCheck.detectedIp,
+        warningHtml: multiCheck.warningHtml,
+        matchedAccounts: multiCheck.matchedAccounts.map((a) => ({
+          username: a.username,
+          name: a.playerName || a.firstName,
+          status: a.status,
+          role: a.status === "registered" ? "player" : undefined,
+          telegramId: a.telegramId,
+        })),
+      },
     });
   });
 
@@ -2265,7 +2354,84 @@ async function start() {
 
   /** Requests still waiting for a decision. Used by the bot's /pending. */
   app.get("/api/admin/registration-requests", requireInternalAuth, (req, res) => {
-    res.json({ success: true, requests: listRegistrationRequests() });
+    const rawList = listRegistrationRequests();
+    const enriched = rawList.map((r) => {
+      const match = checkRegistrationMultiMatch(r.telegramId, r.username);
+      return {
+        ...r,
+        detectedIp: match.detectedIp,
+        hasMultiMatch: match.hasMatch,
+        isSuspicious: match.isSuspicious,
+        warningHtml: match.warningHtml,
+        matchedCount: match.matchedAccounts.length,
+      };
+    });
+    res.json({ success: true, requests: enriched });
+  });
+
+  /**
+   * Multi-Account Analysis for Bot & Admin.
+   * Groups all IP addresses and detects clusters sharing the same IP.
+   */
+  app.get("/api/admin/ip-multis", requireInternalAuth, (_req, res) => {
+    const analysis = analyzeMultiAccounts();
+    const reportText = generateMultiAccountsReportText();
+    res.json({
+      success: true,
+      totalEntries: analysis.totalEntries,
+      uniqueIps: analysis.uniqueIps,
+      uniqueAccounts: analysis.uniqueAccounts,
+      suspiciousCount: analysis.suspiciousCount,
+      clusters: analysis.clusters.slice(0, 30),
+      reportText,
+    });
+  });
+
+  /**
+   * Deep WHOIS for a specific target (@handle, Telegram ID, or IP address).
+   */
+  app.get("/api/admin/ip-whois", requireInternalAuth, (req, res) => {
+    const target = typeof req.query.target === "string" ? req.query.target : "";
+    const whois = getWhois(target);
+    res.json({
+      success: true,
+      ...whois,
+    });
+  });
+
+  /**
+   * Export IP Access Journal and Multi-Account analytical report.
+   */
+  app.get("/api/admin/ip-export", requireInternalAuth, (_req, res) => {
+    const analysis = analyzeMultiAccounts();
+    const csv = generateJournalCsv();
+    const reportText = generateMultiAccountsReportText();
+    res.json({
+      success: true,
+      csv,
+      reportText,
+      totalEntries: analysis.totalEntries,
+      uniqueIps: analysis.uniqueIps,
+      suspiciousCount: analysis.suspiciousCount,
+      generatedAt: formatMskTime(Date.now()),
+    });
+  });
+
+  /**
+   * Import historical log lines (from Nginx or Caddy access logs on VPS).
+   */
+  app.post("/api/admin/ip-import-logs", requireInternalAuth, (req, res) => {
+    let lines: string[] = [];
+    if (Array.isArray(req.body?.lines)) {
+      lines = req.body.lines;
+    } else if (typeof req.body?.rawText === "string") {
+      lines = req.body.rawText.split("\n");
+    }
+    const outcome = importLogLines(lines);
+    res.json({
+      success: true,
+      ...outcome,
+    });
   });
 
   /**
@@ -2373,8 +2539,22 @@ async function start() {
         return res.status(403).json({ error: verified.error });
       }
 
-      const { id: tgId, username } = verified.user;
+      const { id: tgId, username, first_name: firstName, last_name: lastName } = verified.user;
       const handle = username ? normaliseHandle(username) : null;
+      const clientIp = extractClientIp(req);
+      const userAgent = req.headers["user-agent"] as string | undefined;
+
+      // Log access in security journal (captures both registered and unregistered visitors)
+      recordAccess({
+        ip: clientIp,
+        action: "telegram_auth",
+        endpoint: "/api/telegram/auth",
+        telegramId: tgId,
+        username: handle ?? undefined,
+        firstName,
+        lastName,
+        userAgent,
+      });
 
       let player = findPlayerByTelegram(gameState.players, { telegramId: tgId, handle });
       if (player && !player.telegramId) player.telegramId = tgId;
@@ -2721,10 +2901,7 @@ async function start() {
     const pl = gameState.players.find((p) => p.id === session.sub);
     if (!pl) return false;
     if (pl.role === "admin") return true;
-    if (isTelegramAdminHandle(pl.name, DATA_DIR, telegramConfig.adminUsername)) return true;
-    return pl.telegramUsername
-      ? isTelegramAdminHandle(`@${pl.telegramUsername}`, DATA_DIR, telegramConfig.adminUsername)
-      : false;
+    return isAdminPlayer(pl);
   }
 
   app.post("/api/admin/approve-turn", (req, res) => {
@@ -2817,8 +2994,12 @@ async function start() {
     const cell = Math.min(64, Math.max(0, Math.floor(Number(cellRaw))));
     if (!needle) return res.status(400).json({ error: "Не указан игрок." });
     if (!Number.isFinite(cell)) return res.status(400).json({ error: "Некорректная клетка." });
+    const needleLower = needle.toLowerCase();
     const player = gameState.players.find(
-      (p) => p.id === needle || p.name === needle || p.alias === needle
+      (p) =>
+        p.id === needle ||
+        p.name.toLowerCase() === needleLower ||
+        (p.alias || "").toLowerCase() === needleLower
     );
     if (!player) return res.status(404).json({ error: "Игрок не найден." });
     const oldCell = player.cell;
@@ -2902,6 +3083,15 @@ async function start() {
       }
       const { name, password, color, role } = loginParsed.data;
 
+      const clientIp = extractClientIp(req);
+      recordAccess({
+        ip: clientIp,
+        action: "login_attempt",
+        endpoint: "/api/login",
+        username: name,
+        details: `Попытка входа (роль: ${role || "player"})`,
+      });
+
       const lowerName = name.toLowerCase();
 
       // Check if user is trying to login as admin
@@ -2980,12 +3170,7 @@ async function start() {
         if (color) existingPlayer.color = color;
         if (claimedTgId && !existingPlayer.telegramId) existingPlayer.telegramId = claimedTgId;
         saveState();
-        const loginAdmin =
-          existingPlayer.role === "admin" ||
-          isTelegramAdminHandle(existingPlayer.name, DATA_DIR, telegramConfig.adminUsername) ||
-          (existingPlayer.telegramUsername
-            ? isTelegramAdminHandle(`@${existingPlayer.telegramUsername}`, DATA_DIR, telegramConfig.adminUsername)
-            : false);
+        const loginAdmin = isAdminPlayer(existingPlayer);
         const loginRole = loginAdmin ? "admin" : "player";
         return res.json({
           success: true,
@@ -3020,13 +3205,21 @@ async function start() {
   io.on("connection", (socket) => {
     const authPlayerId: string = socket.data.playerId;
     const connectedPlayer = gameState.players.find((p) => p.id === authPlayerId);
+    const socketIp = extractClientIp({
+      headers: socket.handshake.headers,
+      socket: { remoteAddress: socket.handshake.address },
+    });
+    recordAccess({
+      ip: socketIp,
+      action: "socket_connect",
+      endpoint: "/socket.io",
+      telegramId: connectedPlayer?.telegramId,
+      username: connectedPlayer?.name,
+    });
+
     const isAdmin =
-      socket.data.role === "admin" ||
-      connectedPlayer?.role === "admin" ||
-      isTelegramAdminHandle(connectedPlayer?.name, DATA_DIR, telegramConfig.adminUsername) ||
-      (connectedPlayer?.telegramUsername
-        ? isTelegramAdminHandle(`@${connectedPlayer.telegramUsername}`, DATA_DIR, telegramConfig.adminUsername)
-        : false);
+      socket.data.role === "admin" || isAdminPlayer(connectedPlayer);
+    if (isAdmin) socket.data.role = "admin";
     log.debug("Client connected", {
       socket: socket.id,
       player: authPlayerId,
@@ -3551,8 +3744,11 @@ async function start() {
         });
       }
 
-      // Check if finished or landed on prize
-      if (player.cell >= 64) {
+      // Check if finished or landed on prize.
+      // Mega is granted only when this roll actually crossed the finish
+      // (outcome.finished). A token already sitting on 64 wraps to 0 in
+      // resolveMove and must not farm the grand prize again.
+      if (player.cell >= 64 && outcome.finished) {
         player.cell = 64;
         const bonusName = "МЕГА-КРИСТАЛЛ";
         const incoming = {
@@ -3618,6 +3814,8 @@ async function start() {
             `🏆 <b>ПОБЕДА!</b> Вы дошли до финала и забрали главный приз: МЕГА-КРИСТАЛЛ!`
           );
         }
+      } else if (player.cell >= 64) {
+        player.cell = 0;
       } else if (
         bonusText &&
         cell &&
@@ -4264,7 +4462,83 @@ async function start() {
           type: "system",
         });
         saveState();
-        broadcastState();
+        broadcastSlices("players", "logs");
+      }
+    });
+
+    // Player update RPG hero class & avatar
+    socket.on("player:update_hero", (raw: unknown) => {
+      const targetId = authPlayerId;
+      if (!targetId) {
+        socket.emit("error", "Вы не авторизованы.");
+        return;
+      }
+      if (typeof raw !== "object" || raw === null) {
+        socket.emit("error", "Неверный формат данных.");
+        return;
+      }
+      const data = raw as {
+        characterClass?: string;
+        avatar?: string;
+        chipImage?: string;
+        color?: string;
+      };
+      const p = gameState.players.find((pl) => pl.id === targetId);
+      if (!p) return;
+
+      ensurePlayerRpg(p);
+      let changed = false;
+
+      // 1. Аватар героя
+      if (typeof data.avatar === "string") {
+        const cleanAvatar = data.avatar.split("?")[0];
+        if (/^\/avatars\/(m|f)_[1-5]\.svg$/.test(cleanAvatar) || cleanAvatar.startsWith("http")) {
+          p.avatar = data.avatar;
+          changed = true;
+        }
+      }
+
+      // 2. Класс героя и пересчет характеристик
+      if (
+        typeof data.characterClass === "string" &&
+        ["picker", "courier", "clerk", "analyst"].includes(data.characterClass)
+      ) {
+        p.characterClass = data.characterClass as any;
+        const baseStats = CLASS_STATS[p.characterClass!] || { str: 2, int: 2, lck: 2 };
+        const lvlBonus = Math.max(0, (p.characterLevel || 1) - 1);
+        p.characterStats = {
+          str: baseStats.str + lvlBonus,
+          int: baseStats.int + lvlBonus,
+          lck: baseStats.lck + lvlBonus,
+        };
+        changed = true;
+      }
+
+      // 3. Фишка
+      if (typeof data.chipImage === "string") {
+        const cleanPath = data.chipImage.split("?")[0];
+        if (/^\/chips\/chip_(1[0-3]|[1-9])\.svg$/.test(cleanPath)) {
+          p.chipImage = data.chipImage;
+          changed = true;
+        }
+      }
+
+      // 4. Неоновый цвет
+      if (typeof data.color === "string" && /^#[0-9a-fA-F]{6}$/.test(data.color)) {
+        p.color = data.color;
+        changed = true;
+      }
+
+      if (changed) {
+        const classTitle = CLASS_LABEL[p.characterClass || "picker"] || "Герой";
+        addLog({
+          id: "hero_" + Date.now(),
+          message: `⚡ Игрок ${shownName(p)} обновил профиль героя: класс [${classTitle}], Ур. ${p.characterLevel || 1}!`,
+          timestamp: new Date().toLocaleTimeString(),
+          type: "system",
+        });
+        saveState();
+        broadcastSlices("players", "logs");
       }
     });
 
@@ -4751,6 +5025,9 @@ async function start() {
   app.get("/healthz", (req, res) => {
     res.json({
       status: "ok",
+      // Lets the bot verify the live build before announcing an update:
+      // the /update broadcast refuses to go out on a stale server.
+      build: SERVER_BUILD,
       uptime: Math.round(process.uptime()),
       players: gameState.players.length,
       firestore: firestore.getStatus(),

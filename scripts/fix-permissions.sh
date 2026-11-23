@@ -50,7 +50,7 @@ while IFS= read -r found; do
     *" $found "*) ;;
     *) TARGETS+=("$found") ;;
   esac
-done < <(find . deploy scripts -maxdepth 1 -name "*.sh" -type f 2>/dev/null | sed 's|^\./||' | sort -u)
+done < <(find . deploy scripts android_client -name "*.sh" -type f 2>/dev/null | sed 's|^\./||' | sort -u)
 
 BROKEN=0
 FIXED=0

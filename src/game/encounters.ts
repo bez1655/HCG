@@ -34,14 +34,14 @@ export const CLASS_LABEL: Record<CharacterClass, string> = {
 
 export { RANK_LABEL } from "./loyalty";
 
-const CLASS_STATS: Record<CharacterClass, CharacterStats> = {
+export const CLASS_STATS: Record<CharacterClass, CharacterStats> = {
   picker: { str: 3, int: 1, lck: 2 },
   courier: { str: 2, int: 1, lck: 3 },
   clerk: { str: 1, int: 2, lck: 3 },
   analyst: { str: 1, int: 3, lck: 2 },
 };
 
-const CLASSES: CharacterClass[] = ["picker", "courier", "clerk", "analyst"];
+export const CLASSES: CharacterClass[] = ["picker", "courier", "clerk", "analyst"];
 
 export function isBossCell(cellId: number): boolean {
   return (BOSS_CELL_IDS as readonly number[]).includes(cellId);

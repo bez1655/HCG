@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Канонический глубокий темный цвет киберпанк-интерфейса HCG -->
+    <color name="hcg_background">#060412</color>
+</resources>

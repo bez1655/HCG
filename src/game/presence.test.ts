@@ -19,8 +19,8 @@ const NOW = 1_700_000_000_000;
 const agoHours = (h: number) => NOW - h * HOUR;
 
 describe("настройка порога", () => {
-  it("по умолчанию сутки", () => {
-    expect(DEFAULT_HIDE_AFTER_HOURS).toBe(24);
+  it("по умолчанию 5 часов (скрытие неактивных)", () => {
+    expect(DEFAULT_HIDE_AFTER_HOURS).toBe(5);
   });
 
   it("ноль означает «не прятать никогда»", () => {

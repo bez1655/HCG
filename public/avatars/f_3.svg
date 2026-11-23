@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_f3" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#0a2a1a"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_f3)" rx="24"/>
+      <polygon points="128,20 236,128 128,236 20,128" fill="none" stroke="#00ff66" stroke-width="2" opacity="0.4"/>
+      <!-- Jacket -->
+      <path d="M55 240 L88 165 L128 185 L168 165 L201 240 Z" fill="#091c13" stroke="#00ff66" stroke-width="2"/>
+      <!-- Face -->
+      <path d="M104 95 L152 95 L146 155 L128 170 L110 155 Z" fill="#e8ba9e"/>
+      <!-- Cyber Dreads Neon Green -->
+      <path d="M92 90 Q128 50 164 90 L170 170 Q160 185 152 145 L152 95 L104 95 L104 145 Q96 185 86 170 Z" fill="#00ff66" opacity="0.85"/>
+      <!-- AR Holographic Glasses -->
+      <path d="M104 112 L152 112 L146 128 L110 128 Z" fill="#00ff66" fill-opacity="0.3" stroke="#00ff66" stroke-width="2" filter="drop-shadow(0 0 8px #00ff66)"/>
+      <line x1="108" y1="120" x2="148" y2="120" stroke="#ffffff" stroke-width="1.5"/>
+      <!-- Lips -->
+      <path d="M122 148 Q128 152 134 148" stroke="#00ff66" stroke-width="2" fill="none"/>
+    </svg>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_m2" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#0a2a1b"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+        <linearGradient id="neon_m2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#00ff66"/>
+          <stop offset="100%" stop-color="#00aa44"/>
+        </linearGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_m2)" rx="24"/>
+      <polygon points="128,18 238,128 128,238 18,128" fill="none" stroke="#00ff66" stroke-width="2" opacity="0.4"/>
+      <!-- Hood -->
+      <path d="M60 240 L84 140 L128 60 L172 140 L196 240 Z" fill="#06120b" stroke="#00ff66" stroke-width="2"/>
+      <!-- Face in Shadow -->
+      <path d="M100 110 L156 110 L148 175 L128 188 L108 175 Z" fill="#1f2d24"/>
+      <!-- Glowing Cyber Lenses -->
+      <rect x="106" y="125" width="16" height="10" rx="3" fill="#00ff66" filter="drop-shadow(0 0 8px #00ff66)"/>
+      <rect x="134" y="125" width="16" height="10" rx="3" fill="#00ff66" filter="drop-shadow(0 0 8px #00ff66)"/>
+      <line x1="122" y1="130" x2="134" y2="130" stroke="#00ff66" stroke-width="2"/>
+      <!-- Data Cables / Neck -->
+      <path d="M96 170 Q110 200 108 240" stroke="#00ff66" stroke-width="3" fill="none"/>
+      <path d="M160 170 Q146 200 148 240" stroke="#00ff66" stroke-width="3" fill="none"/>
+      <!-- Matrix Code Glow -->
+      <text x="128" y="225" font-family="monospace" font-size="10" fill="#00ff66" text-anchor="middle" opacity="0.8">[NET:LINKED]</text>
+    </svg>

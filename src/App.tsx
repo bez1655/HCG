@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { GameState, DropBoxOption, RpgEncounterSession } from "./types";
+import { GameState, DropBoxOption, RpgEncounterSession, CharacterClass } from "./types";
 import { playSound } from "./utils/sounds";
 import { setLocale, detectLocale } from "./i18n";
 import { apiFetch, socketUrl, TELEGRAM_LOGIN_ENABLED } from "./config/api";
@@ -313,9 +313,19 @@ export default function App() {
     // absolute server origin in the standalone app, which has no server of
     // its own to connect back to.
     const newSocket = io(socketUrl(), {
-      transports: ["websocket", "polling"],
+      // Polling first, then upgrade to websocket. "websocket" first bricks the
+      // live channel on networks that block the WS upgrade (VPN, some mobile
+      // carriers) while plain HTTP keeps working: the board then loads over
+      // /api/state, but every roll reports "no connection". Polling always
+      // works and socket.io upgrades transparently when it can.
+      transports: ["polling", "websocket"],
       reconnection: true,
-      reconnectionAttempts: 10,
+      // Never give up reconnecting: a dead socket on a loaded board is the
+      // exact "server unavailable" dead end players reported.
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
       auth: { token },
     });
 
@@ -432,6 +442,14 @@ export default function App() {
       });
     }, 8000);
 
+    // Connection restored: drop the stale "no connection" banner by itself,
+    // the player should not have to tap it away or re-enter via the bot.
+    newSocket.on("connect", () => {
+      setServerError((prev) =>
+        prev && /связ/i.test(prev) ? null : prev
+      );
+    });
+
     newSocket.on("connect_error", (err: Error) => {
       if (err?.message === "UNAUTHORIZED") {
         clearTimeout(stateDeadline);
@@ -515,7 +533,8 @@ export default function App() {
     role: "admin" | "player",
     color: string,
     token?: string,
-    forceId?: string
+    forceId?: string,
+    chipImage?: string
   ) => {
     // The server is authoritative for the id; it always returns one on success.
     const id = forceId || (role === "admin" ? "admin_user" : "p_" + Date.now());
@@ -524,6 +543,13 @@ export default function App() {
     setUserName(name);
     setUserRole(role);
     setUserColor(color);
+
+    if (chipImage) {
+      localStorage.setItem("hapstore_userChip", chipImage);
+      if (socket) {
+        socket.emit("player:update_skin", { chipImage, color });
+      }
+    }
 
     // Stores the short-lived session token instead of the admin password.
     persistSession(id, name, role, color, token, "rules");
@@ -559,7 +585,14 @@ export default function App() {
   // The server picks the dice value and replies with "roll:result".
   const handleRoll = (item?: "shield" | "loaded_dice" | "magnet") => {
     if (!socket || !socket.connected) {
-      setServerError("Нет связи с сервером. Откройте игру кнопкой «ИГРАТЬ» в боте ещё раз.");
+      // Board can be on screen from the HTTP snapshot while the live socket
+      // is still reconnecting (VPN / mobile network hiccup). Reconnect in
+      // place instead of sending the player back to the bot: the session
+      // token is still valid, only the transport dropped.
+      if (socket) socket.connect();
+      setServerError(
+        "Связь с сервером потеряна — переподключаемся. Подождите 2–3 секунды и нажмите кубик ещё раз. Заново заходить через бота не нужно."
+      );
       return;
     }
     socket.emit("roll:request", { useItem: item });
@@ -764,6 +797,17 @@ export default function App() {
     }
   };
 
+  const handleUpdateHero = (data: {
+    characterClass?: CharacterClass;
+    avatar?: string;
+    chipImage?: string;
+    color?: string;
+  }) => {
+    if (socket) {
+      socket.emit("player:update_hero", data);
+    }
+  };
+
   const handleRejectPlayerTurn = (pId: string) => {
     const token = localStorage.getItem("hapstore_token") || "";
     void apiFetch("/api/admin/reject-turn", {
@@ -882,6 +926,7 @@ export default function App() {
             onRejectPlayerTurn={handleRejectPlayerTurn}
             onConsumeBonus={handleConsumeBonus}
             onUpdateSkin={handleUpdateSkin}
+            onUpdateHero={handleUpdateHero}
           />
         </CrashGuard>
       )}

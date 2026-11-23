@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_f2" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#0a2638"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_f2)" rx="24"/>
+      <circle cx="128" cy="128" r="110" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="6 4" opacity="0.6"/>
+      <!-- Stealth Suit -->
+      <path d="M55 240 L88 165 L128 180 L168 165 L201 240 Z" fill="#0d1821" stroke="#00f0ff" stroke-width="2"/>
+      <!-- Face -->
+      <path d="M104 95 L152 95 L146 155 L128 170 L110 155 Z" fill="#f0c6ac"/>
+      <!-- Silver Bob Hair -->
+      <path d="M96 90 Q128 50 160 90 L166 145 L152 135 L152 95 L104 95 L104 135 L90 145 Z" fill="#e2e8f0"/>
+      <!-- Turquoise Glowing Eyes -->
+      <ellipse cx="116" cy="118" rx="6" ry="3.5" fill="#00f0ff" filter="drop-shadow(0 0 6px #00f0ff)"/>
+      <ellipse cx="140" cy="118" rx="6" ry="3.5" fill="#00f0ff" filter="drop-shadow(0 0 6px #00f0ff)"/>
+      <!-- Stealth Half Mask -->
+      <path d="M110 135 L146 135 L140 168 L128 174 L116 168 Z" fill="#1e293b" stroke="#00f0ff" stroke-width="1.5"/>
+      <circle cx="128" cy="152" r="3" fill="#00f0ff"/>
+    </svg>

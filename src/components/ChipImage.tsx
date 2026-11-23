@@ -147,7 +147,15 @@ const ChipImage = React.memo(({ src, color, label, className, style }: ChipImage
 
   if (!painted) {
     // Пока грузится — прозрачное место того же размера, чтобы доска не прыгала.
-    return <div className={className} style={glow} aria-hidden="true" />;
+    return (
+      <div
+        className={className}
+        style={glow}
+        role="img"
+        aria-label={label}
+        title={label}
+      />
+    );
   }
 
   return (

@@ -49,6 +49,8 @@ export interface RequestOutcome {
   /** True when administrators still need to be notified. */
   notifyAdmins: boolean;
   handle: string;
+  warningHtml?: string;
+  detectedIp?: string;
 }
 
 /**
@@ -105,6 +107,12 @@ export async function submitRegistration(
     error?: string;
     name?: string;
     alias?: string | null;
+    multiMatch?: {
+      hasMatch?: boolean;
+      isSuspicious?: boolean;
+      detectedIp?: string;
+      warningHtml?: string;
+    };
   };
 
   if (!res.ok) {
@@ -147,25 +155,35 @@ export async function submitRegistration(
       "в этот чат придут ваш логин и пароль, и кнопка «🎮 ИГРАТЬ» откроет игру.",
     notifyAdmins: true,
     handle,
+    warningHtml: data.multiMatch?.warningHtml,
+    detectedIp: data.multiMatch?.detectedIp,
   };
 }
 
 /** Send the approve/reject card to every administrator. */
 export async function notifyAdminsAboutRequest(
   deps: RegistrationDeps,
-  user: { handle: string; id: number; firstName?: string },
+  user: { handle: string; id: number; firstName?: string; warningHtml?: string; detectedIp?: string },
   resolveChatId: (adminHandle: string) => number | undefined
 ): Promise<void> {
-  const text =
+  let text =
     `⚡ <b>НОВАЯ ЗАЯВКА НА РЕГИСТРАЦИЮ</b>\n\n` +
     `Игрок: <b>${escapeHtml(user.handle)}</b>\n` +
     (user.firstName ? `Имя: ${escapeHtml(user.firstName)}\n` : "") +
-    `Telegram ID: <code>${user.id}</code>\n\n` +
-    `<i>При регистрации бот сам создаст пароль и отправит его игроку.</i>`;
+    `Telegram ID: <code>${user.id}</code>\n`;
+
+  if (user.warningHtml) {
+    text += `\n${user.warningHtml}\n`;
+  } else if (user.detectedIp) {
+    text += `IP адрес: <code>${escapeHtml(user.detectedIp)}</code>\n`;
+  }
+
+  text += `\n<i>При регистрации бот сам создаст пароль и отправит его игроку.</i>`;
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback("✅ ЗАРЕГИСТРИРОВАТЬ", `approve_reg:${user.handle}`)],
     [Markup.button.callback("❌ ОТКАЗАТЬ", `reject_reg:${user.handle}`)],
+    [Markup.button.callback("🔍 WHOIS / ПРОВЕРКА", `whois_user:${user.handle}`)],
   ]);
 
   let delivered = 0;

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_f1" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#2a0a38"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+        <linearGradient id="hair_f1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#bd00ff"/>
+          <stop offset="100%" stop-color="#ff00aa"/>
+        </linearGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_f1)" rx="24"/>
+      <circle cx="128" cy="128" r="110" fill="none" stroke="#bd00ff" stroke-width="2.5" opacity="0.5"/>
+      <!-- Slim Cyber Suit -->
+      <path d="M60 240 L90 170 L128 185 L166 170 L196 240 Z" fill="#130820" stroke="#bd00ff" stroke-width="2"/>
+      <circle cx="128" cy="205" r="8" fill="#ff00aa" filter="drop-shadow(0 0 8px #ff00aa)"/>
+      <!-- Neck -->
+      <path d="M116 155 L140 155 L138 185 L118 185 Z" fill="#f2c1a2"/>
+      <!-- Face -->
+      <path d="M104 95 L152 95 L146 155 L128 172 L110 155 Z" fill="#fbd1b7"/>
+      <!-- Purple Neon Asymmetric Hair -->
+      <path d="M96 90 Q128 45 160 90 L168 150 Q160 180 152 140 L156 95 L100 95 L88 160 Q80 190 92 140 Z" fill="url(#hair_f1)"/>
+      <!-- Eyes with Cat-Eye Liner and Glow -->
+      <ellipse cx="116" cy="120" rx="7" ry="4" fill="#ffffff"/>
+      <circle cx="117" cy="120" r="3.5" fill="#bd00ff" filter="drop-shadow(0 0 5px #bd00ff)"/>
+      <ellipse cx="140" cy="120" rx="7" ry="4" fill="#ffffff"/>
+      <circle cx="139" cy="120" r="3.5" fill="#bd00ff" filter="drop-shadow(0 0 5px #bd00ff)"/>
+      <!-- Cyber Cheek Tattoo -->
+      <path d="M142 135 L148 140 L152 136" stroke="#00f0ff" stroke-width="1.5" fill="none"/>
+      <!-- Lips -->
+      <path d="M122 150 Q128 153 134 150" stroke="#ff0077" stroke-width="2" fill="none"/>
+    </svg>

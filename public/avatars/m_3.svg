@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+      <defs>
+        <radialGradient id="bg_m3" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#2a220a"/>
+          <stop offset="100%" stop-color="#030712"/>
+        </radialGradient>
+      </defs>
+      <rect width="256" height="256" fill="url(#bg_m3)" rx="24"/>
+      <circle cx="128" cy="128" r="110" fill="none" stroke="#f5c542" stroke-width="2" opacity="0.5"/>
+      <!-- Trench Coat / Collar -->
+      <path d="M50 240 L85 160 L128 185 L171 160 L206 240 Z" fill="#181510" stroke="#f5c542" stroke-width="2"/>
+      <path d="M110 185 L128 240 L146 185 Z" fill="#f5c542" opacity="0.3"/>
+      <!-- Face -->
+      <path d="M98 85 L158 85 L152 165 L128 180 L104 165 Z" fill="#d9a58b"/>
+      <!-- Slick Back Dark Hair -->
+      <path d="M94 85 Q128 50 162 85 L158 70 Q128 40 98 70 Z" fill="#1c1917"/>
+      <!-- Gold Monocle Optical Implant -->
+      <circle cx="142" cy="115" r="14" fill="#f5c542" fill-opacity="0.3" stroke="#f5c542" stroke-width="2.5" filter="drop-shadow(0 0 6px #f5c542)"/>
+      <circle cx="142" cy="115" r="4" fill="#f5c542"/>
+      <line x1="142" y1="101" x2="160" y2="90" stroke="#f5c542" stroke-width="1.5"/>
+      <!-- Normal Eye Left -->
+      <ellipse cx="114" cy="115" rx="7" ry="4" fill="#ffffff"/>
+      <circle cx="114" cy="115" r="3" fill="#3b2d18"/>
+      <!-- Cigarette / Neo Smoke -->
+      <line x1="130" y1="155" x2="155" y2="162" stroke="#ffffff" stroke-width="2.5"/>
+      <circle cx="156" cy="162" r="2" fill="#ff4400" filter="drop-shadow(0 0 4px #ff4400)"/>
+    </svg>

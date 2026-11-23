@@ -107,7 +107,7 @@ export function resolveMove(
       if (options?.shieldActive) {
         shieldBlocked = true;
         finalCell = landedCell;
-        effectText = `🛡️ Сработал Файрвол-щит! Поглощён откат системы на клетке ${landedCell}. Фишка осталась на месте!`;
+        effectText = `🛡️ Сработал Файрвол-щит! ФАЙРВОЛ ПОГЛОТИЛ откат системы на клетке ${landedCell}. Фишка осталась на месте!`;
       } else if (cell.value < 0) {
         finalCell = Math.max(0, landedCell + cell.value);
         const absVal = Math.abs(cell.value);

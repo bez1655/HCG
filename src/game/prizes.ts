@@ -44,3 +44,12 @@ export function keepBetterPrize(
   }
   return { active: current, replaced: false };
 }
+
+/** Искоренение устаревших терминов виртуальной валюты (CR, кредиты) для идеальной чистоты UI. */
+export function cleanPrizeText(text: string | null | undefined): string {
+  if (!text) return "";
+  return text
+    .replace(/\b(\d+)\s*CR\b/gi, "СКИДКА $1")
+    .replace(/(\d+)\s*кредитов/gi, "скидка $1 в Hapstore")
+    .replace(/кредитов/gi, "в Hapstore");
+}
