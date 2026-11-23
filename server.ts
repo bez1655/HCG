@@ -579,7 +579,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-23.30";
+const SERVER_BUILD = "2026-11-23.31";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -5087,9 +5087,28 @@ async function start() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith(".html")) {
+            res.setHeader(
+              "Cache-Control",
+              "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+            );
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          }
+        },
+      })
+    );
     // Express 5 requires a named wildcard ("*" alone is no longer valid).
     app.get("/*splat", (req, res) => {
+      res.setHeader(
+        "Cache-Control",
+        "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+      );
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

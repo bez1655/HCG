@@ -49,16 +49,16 @@ export default function InventoryBar({
   ];
 
   return (
-    <div className="flex flex-col items-start gap-1 select-none pointer-events-auto">
+    <div className="flex flex-col items-start gap-1.5 select-none pointer-events-auto">
       {/* Header title as seen on screenshot */}
-      <div className="flex items-center gap-1 px-1 py-0.5">
-        <span className="font-mono text-[9px] font-black tracking-[0.24em] text-[#00f0ff] uppercase drop-shadow-[0_0_8px_rgba(0,240,255,0.7)]">
+      <div className="w-[78px] text-center px-2 py-0.5 bg-[#050c18]/90 border border-[#00f0ff]/70 rounded-lg shadow-[0_0_10px_rgba(0,240,255,0.4)]">
+        <span className="font-mono text-[9px] font-black tracking-[0.2em] text-[#00f0ff] uppercase drop-shadow-[0_0_8px_rgba(0,240,255,0.8)]">
           ИНВЕНТАРЬ
         </span>
       </div>
 
-      {/* 3 vertical cyber slots with chamfered corners */}
-      <div className="flex flex-col gap-1.5 w-[118px]">
+      {/* 3 vertical cyber slots with icon on top and 2-line centered label */}
+      <div className="flex flex-col gap-2 w-[78px]">
         {items.map((item) => {
           const isActive = activeItem === item.id;
           const isUsable = !disabled && item.count > 0;
@@ -74,47 +74,45 @@ export default function InventoryBar({
                 onToggleItem(item.id);
               }}
               title={`${item.line1} ${item.line2} (×${item.count})`}
-              className={`relative min-h-[46px] w-full px-2 py-1.5 flex items-center gap-1.5 text-left transition-all duration-150 cursor-pointer ${
+              className={`relative min-h-[74px] w-full p-1.5 flex flex-col items-center justify-center text-center rounded-2xl transition-all duration-200 cursor-pointer ${
                 isActive
-                  ? "bg-[#06182a]/95 border border-[#00f0ff] shadow-[0_0_16px_rgba(0,240,255,0.7)] scale-[1.02]"
-                  : "bg-[#050c18]/90 border border-[#00f0ff]/35 hover:border-[#00f0ff]/75 hover:bg-[#071324]/90 shadow-[0_0_10px_rgba(0,0,0,0.6)]"
-              } ${!isUsable ? "opacity-40 cursor-not-allowed hover:border-[#00f0ff]/20" : "active:scale-95"}`}
-              style={{
-                clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
-              }}
+                  ? "bg-gradient-to-b from-[#08223f]/95 to-[#051122]/95 border-2 border-[#00f0ff] shadow-[0_0_20px_rgba(0,240,255,0.8)] scale-[1.03]"
+                  : "bg-gradient-to-b from-[#061426]/90 to-[#020712]/95 border border-[#00f0ff]/50 hover:border-[#00f0ff] shadow-[0_0_12px_rgba(0,240,255,0.25)]"
+              } ${!isUsable ? "opacity-60 cursor-not-allowed hover:border-[#00f0ff]/30" : "active:scale-95"}`}
             >
               {/* Photorealistic 3D Icon */}
-              <div className="relative w-[28px] h-[28px] shrink-0 flex items-center justify-center">
+              <div className="relative w-[34px] h-[34px] shrink-0 flex items-center justify-center my-0.5">
                 <img
                   src={item.iconSrc}
                   alt={item.line1}
-                  className="w-full h-full object-contain filter drop-shadow-[0_0_6px_rgba(0,240,255,0.5)]"
+                  className="w-full h-full object-contain filter drop-shadow-[0_0_8px_rgba(0,240,255,0.7)]"
                   onError={(e) => {
-                    // Fallback with cache-busting tag
-                    (e.target as HTMLImageElement).src = "/Dice.png?v=14";
+                    (e.target as HTMLImageElement).src = "/Dice.png?v=16";
                   }}
                 />
               </div>
 
-              {/* Text label in 2 lines */}
-              <div className="flex flex-col min-w-0 leading-tight">
-                <span className="font-mono text-[9px] font-bold text-white tracking-tight truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+              {/* Text label in 2 lines centered */}
+              <div className="flex flex-col items-center justify-center min-w-0 leading-tight mt-0.5">
+                <span className="font-mono text-[8px] font-bold text-white tracking-tight truncate max-w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                   {item.line1}
                 </span>
-                <span className="font-mono text-[9px] font-bold text-white/90 tracking-tight truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                <span className="font-mono text-[8px] font-bold text-white/90 tracking-tight truncate max-w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                   {item.line2}
                 </span>
               </div>
 
-              {/* Count badge */}
-              <div className="ml-auto shrink-0 pl-0.5">
-                <span
-                  className="font-mono text-[9.5px] font-black"
-                  style={{ color: item.count > 0 ? item.color : "rgba(255,255,255,0.4)" }}
-                >
-                  ×{item.count}
-                </span>
-              </div>
+              {/* Count badge in corner */}
+              {item.count > 0 && (
+                <div className="absolute top-1 right-1 px-1 py-0.2 bg-black/80 rounded border border-white/20">
+                  <span
+                    className="font-mono text-[8px] font-black"
+                    style={{ color: item.color }}
+                  >
+                    ×{item.count}
+                  </span>
+                </div>
+              )}
             </button>
           );
         })}

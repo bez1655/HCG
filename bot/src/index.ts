@@ -188,10 +188,16 @@ const registrationDeps: RegistrationDeps = {
 type InlineButton =
   ReturnType<typeof Markup.button.webApp> | ReturnType<typeof Markup.button.callback>;
 
+function getWebAppUrl(): string {
+  if (!WEB_APP_URL) return "";
+  return `${WEB_APP_URL}${WEB_APP_URL.includes("?") ? "&" : "?"}v=${BUILD}`;
+}
+
 function playerKeyboard(registered: boolean) {
   const rows: InlineButton[][] = [];
-  if (WEB_APP_URL) {
-    rows.push([Markup.button.webApp("🎮 ИГРАТЬ", WEB_APP_URL)]);
+  const appUrl = getWebAppUrl();
+  if (appUrl) {
+    rows.push([Markup.button.webApp("🎮 ИГРАТЬ", appUrl)]);
   }
   if (!registered) {
     rows.push([Markup.button.callback("📝 ЗАПРОСИТЬ РЕГИСТРАЦИЮ", "self_register")]);
@@ -1628,10 +1634,11 @@ bot.action(/approve_reg:(.+)/, async (ctx) => {
     const recipient = data.chatId ?? chatIdFor(targetUser) ?? targetUser;
     let delivered = true;
     try {
+      const playBtn = getWebAppUrl() ? Markup.inlineKeyboard([[Markup.button.webApp("🎮 ИГРАТЬ", getWebAppUrl())]]) : {};
       await asyncQueue.sendMessage(
         recipient,
         credentialsMessage(targetUser, data.password || ""),
-        WEB_APP_URL ? Markup.inlineKeyboard([[Markup.button.webApp("🎮 ИГРАТЬ", WEB_APP_URL)]]) : {}
+        playBtn
       );
     } catch {
       delivered = false;

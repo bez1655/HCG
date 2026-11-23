@@ -8,7 +8,7 @@
  *
  * Bump BUILD when shipping a change that must be verifiable on a server.
  */
-export const BUILD = "2026-11-23.29";
+export const BUILD = "2026-11-23.31";
 export const FEATURES = [
   "access & security journal, multi-account IP control, bot /multis /whois /export_ips, historical log import",
   "deploy-script update broadcast prompt with build guard",

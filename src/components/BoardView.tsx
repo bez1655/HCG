@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { GameState, Player, Cell, CellType } from "../types";
+import { GameState, Player, Cell, CellType, CharacterClass } from "../types";
 import {
   playSound,
   getSoundVolume,
@@ -31,6 +31,10 @@ import {
   Shield,
   Clock,
   Zap,
+  LayoutGrid,
+  Trophy,
+  User,
+  BarChart2,
 } from "lucide-react";
 import HelpScreen from "./HelpScreen";
 import CellComponent from "./CellComponent";
@@ -45,9 +49,12 @@ import StatsSidebar from "./StatsSidebar";
 import { turnsLeft, pluralizeTurns, DROP_BOX_CELL_IDS } from "../game/rules";
 import { isTokenVisible } from "../game/presence";
 import { describeEffect } from "../game/cellGuide";
+import { getLoyaltyDiscountPercent, RANK_LABEL } from "../game/loyalty";
+import { CLASS_LABEL } from "../game/encounters";
 import PlayerCabinet from "./PlayerCabinet";
 import InventoryBar from "./InventoryBar";
 import { hapticImpact, hapticNotification, hapticSelection } from "../utils/haptics";
+import { cleanPrizeText } from "../game/prizes";
 
 interface BoardViewProps {
   gameState: GameState;
@@ -70,6 +77,12 @@ interface BoardViewProps {
   onRejectPlayerTurn?: (pId: string) => void;
   onConsumeBonus?: (pId: string) => void;
   onUpdateSkin?: (chipImage: string, color: string) => void;
+  onUpdateHero?: (data: {
+    characterClass?: CharacterClass;
+    avatar?: string;
+    chipImage?: string;
+    color?: string;
+  }) => void;
 }
 
 export default function BoardView({
@@ -90,6 +103,7 @@ export default function BoardView({
   onRejectPlayerTurn,
   onConsumeBonus,
   onUpdateSkin,
+  onUpdateHero,
 }: BoardViewProps) {
   const [activeChatTab, setActiveChatTab] = useState<"chat" | "logs">("chat");
   const [chatInput, setChatInput] = useState("");
@@ -111,6 +125,8 @@ export default function BoardView({
   const [rolledNumber, setRolledNumber] = useState<number | null>(null);
   const [_pulseKey, setPulseKey] = useState(0);
   const [_showHud, setShowHud] = useState(false);
+  // Временное положение перетаскиваемых пальцем клеток в режиме калибровки
+  const [liveDragMap, setLiveDragMap] = useState<Record<number, { x: number; y: number }>>({});
 
   useEffect(() => {
     if (gameState.currentPlayerId) {
@@ -134,9 +150,20 @@ export default function BoardView({
 
   // Drawer states
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Close the navigation without touching the game state or the active roll.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleMenuEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMenuOpen(false);
+    };
+    window.addEventListener("keydown", handleMenuEscape);
+    return () => window.removeEventListener("keydown", handleMenuEscape);
+  }, [isMenuOpen]);
   const [isPlayersDrawerOpen, setIsPlayersDrawerOpen] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [isCabinetOpen, setIsCabinetOpen] = useState(false);
+  const [cabinetTab, setCabinetTab] = useState<"prizes" | "badges" | "skins" | "hero">("prizes");
   const [playerSearch, setPlayerSearch] = useState("");
 
   // Audio Settings states
@@ -495,204 +522,162 @@ export default function BoardView({
         />
       )}
 
-      {/* --- TOP FLOATING OVERLAY HUD --- */}
-      <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-2 z-40 pointer-events-none">
-        {/* 1. МЕНЮ button with dropdown */}
-        <div className="relative pointer-events-auto">
-          <button
-            onClick={() => {
-              playSound("click");
-              hapticSelection();
-              setIsMenuOpen(!isMenuOpen);
-            }}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-[10px] font-black transition duration-200 cursor-pointer font-mono tracking-wider shadow-lg ${
-              isMenuOpen
-                ? "bg-[#00ffaa] text-black border-[#00ffaa] shadow-[0_0_15px_rgba(0,255,170,0.4)]"
-                : "bg-black/90 border-[#00ffaa]/50 text-[#00ffaa] hover:bg-[#00ffaa]/15"
-            }`}
-          >
-            <Menu size={14} />
-            <span>МЕНЮ</span>
-          </button>
-
-          {/* Menu Dropdown Popup */}
-          <AnimatePresence>
+      {/* --- FULLSCREEN CYBER MAIN MENU DRAWER --- */}
+      <AnimatePresence>
             {isMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute left-0 top-12 z-50 w-52 bg-black/95 backdrop-blur-xl border-2 border-[#00ffaa]/40 rounded-2xl p-2 shadow-[0_0_25px_rgba(0,255,170,0.25)] flex flex-col gap-1 text-white font-mono text-xs select-none"
+              <motion.div
+                key="hcg-menu-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.16 }}
+                className="fixed inset-0 z-[160] flex justify-center pointer-events-auto"
+              >
+                <button
+                  type="button"
+                  aria-label="Закрыть меню"
+                  className="absolute inset-0 w-full h-full bg-[#020811]/92 cursor-default"
+                  onClick={() => setIsMenuOpen(false)}
+                />
+                <motion.nav
+                  id="hcg-main-menu"
+                  data-testid="hcg-main-menu"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Главное меню HCG"
+                  initial={{ y: 30, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 30, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="relative flex flex-col w-full max-w-[480px] h-full min-h-0 overflow-hidden bg-[#050c17] text-white shadow-[0_0_80px_rgba(0,255,170,0.16)] border-x border-[#00ffaa]/20"
                 >
-                  <div className="px-3 py-1.5 text-[9px] font-black text-[#00ffaa]/70 uppercase tracking-widest border-b border-white/10 mb-1 flex justify-between items-center">
-                    <span>ГЛАВНОЕ МЕНЮ</span>
-                    <button
-                      onClick={() => setIsMenuOpen(false)}
-                      className="text-white/40 hover:text-white"
-                    >
-                      <X size={12} />
-                    </button>
+                  <div className="relative shrink-0 px-5 pt-[max(22px,env(safe-area-inset-top))] pb-6 border-b border-[#00ffaa]/20 overflow-hidden">
+                    <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-24 w-64 h-64 rounded-full bg-[#00ffaa]/10 blur-3xl" />
+                    <div className="relative flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.32em] text-[#00ffaa] font-mono font-black">
+                          HAPSTORE CYBER GAME
+                        </p>
+                        <h2 className="mt-3 font-black text-[30px] leading-none tracking-tight uppercase">
+                          ГЛАВНОЕ <span className="text-[#00ffaa]">МЕНЮ</span>
+                        </h2>
+                        <p className="mt-2 text-[11px] font-mono text-white/50 tracking-wide">
+                          ПАНЕЛЬ УПРАВЛЕНИЯ · HCG
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        autoFocus
+                        aria-label="Закрыть главное меню"
+                        onClick={() => setIsMenuOpen(false)}
+                        className="shrink-0 grid place-items-center w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-white/5 border border-white/20 hover:border-[#00ffaa] hover:text-[#00ffaa] transition-colors cursor-pointer"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* 1. ИГРОКИ */}
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsMenuOpen(false);
-                      setIsPlayersDrawerOpen(true);
-                      setIsChatDrawerOpen(false);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#00ffaa]/15 hover:text-[#00ffaa] transition text-left cursor-pointer font-bold tracking-wider"
-                  >
-                    <Users size={14} className="text-[#00ffaa]" />
-                    <span>ИГРОКИ</span>
-                  </button>
+                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5 space-y-6 scrollbar-none">
+                    <section aria-labelledby="hcg-menu-game-section">
+                      <h3 id="hcg-menu-game-section" className="px-2 mb-3 text-[10px] uppercase tracking-[0.24em] font-black font-mono text-white/45">01 / ГОРОД</h3>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          data-testid="menu-board"
+                          onClick={() => { playSound("click"); setIsMenuOpen(false); }}
+                          className="col-span-2 flex items-center gap-3 rounded-2xl border border-[#00ffaa]/60 bg-gradient-to-r from-[#00ffaa]/20 to-[#00ffaa]/5 px-4 py-4 text-left hover:bg-[#00ffaa]/25 transition-colors"
+                        >
+                          <Zap size={21} className="text-[#00ffaa] shrink-0" />
+                          <span className="flex-1"><strong className="block text-sm font-black tracking-wide">ВЕРНУТЬСЯ В ИГРУ</strong><span className="block text-[10px] text-white/55 mt-1 font-mono">Продолжить на игровом поле</span></span>
+                          <span className="text-[#00ffaa] text-xl" aria-hidden="true">›</span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="menu-players"
+                          onClick={() => { playSound("click"); setIsMenuOpen(false); setIsPlayersDrawerOpen(true); setIsChatDrawerOpen(false); }}
+                          className="flex min-h-[90px] flex-col justify-center gap-2.5 rounded-2xl bg-[#101d29] border border-white/10 px-4 text-left hover:border-[#00ffaa]/50 transition-colors"
+                        ><Users size={20} className="text-[#00ffaa]" /><strong className="text-[12px] tracking-wide">ИГРОКИ</strong></button>
+                        <button
+                          type="button"
+                          data-testid="menu-chat"
+                          onClick={() => { playSound("click"); setIsMenuOpen(false); setIsChatDrawerOpen(true); setIsPlayersDrawerOpen(false); }}
+                          className="flex min-h-[90px] flex-col justify-center gap-2.5 rounded-2xl bg-[#101d29] border border-white/10 px-4 text-left hover:border-[#00ffaa]/50 transition-colors"
+                        ><MessageSquare size={20} className="text-[#00ffaa]" /><strong className="text-[12px] tracking-wide">ЧАТ</strong></button>
+                        <button
+                          type="button"
+                          data-testid="menu-rules"
+                          onClick={() => { playSound("click"); setIsMenuOpen(false); openRules(); }}
+                          className="flex min-h-[90px] flex-col justify-center gap-2.5 rounded-2xl bg-[#101d29] border border-white/10 px-4 text-left hover:border-[#f5c542]/50 transition-colors"
+                        ><BookOpen size={20} className="text-[#f5c542]" /><strong className="text-[12px] tracking-wide">ПРАВИЛА</strong></button>
+                        <button
+                          type="button"
+                          data-testid="menu-help"
+                          onClick={() => { playSound("click"); setIsMenuOpen(false); setIsHelpOpen(true); }}
+                          className="flex min-h-[90px] flex-col justify-center gap-2.5 rounded-2xl bg-[#101d29] border border-white/10 px-4 text-left hover:border-[#f5c542]/50 transition-colors"
+                        ><HelpCircle size={20} className="text-[#f5c542]" /><strong className="text-[12px] tracking-wide">СПРАВКА</strong></button>
+                      </div>
+                    </section>
 
-                  {/* 2. ПРАВИЛА */}
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsMenuOpen(false);
-                      openRules();
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#f5c542]/15 hover:text-[#f5c542] transition text-left cursor-pointer font-bold tracking-wider"
-                  >
-                    <BookOpen size={14} className="text-[#f5c542]" />
-                    <span>ПРАВИЛА</span>
-                  </button>
-
-                  {/* 3. СПРАВКА — что делает каждая клетка */}
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsMenuOpen(false);
-                      setIsHelpOpen(true);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#00ffaa]/15 hover:text-[#00ffaa] transition text-left cursor-pointer font-bold tracking-wider"
-                  >
-                    <HelpCircle size={14} className="text-[#00ffaa]" />
-                    <span>СПРАВКА</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsMenuOpen(false);
-                      setIsCabinetOpen(true);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#00ffaa]/15 hover:text-[#00ffaa] transition text-left cursor-pointer font-bold tracking-wider"
-                  >
-                    <Award size={14} className="text-[#00ffaa]" />
-                    <span>МОИ ПРИЗЫ</span>
-                  </button>
-
-                  {/* 4. НАСТРОЙКИ */}
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsMenuOpen(false);
-                      setIsAudioSettingsOpen(true);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-purple-500/15 hover:text-purple-400 transition text-left cursor-pointer font-bold tracking-wider"
-                  >
-                    <Sliders size={14} className="text-purple-400" />
-                    <span>НАСТРОЙКИ</span>
-                  </button>
-                  {/* 5. АДМИНКА */}
-                  {userRole === "admin" && (
+                    <section aria-labelledby="hcg-menu-profile-section">
+                      <h3 id="hcg-menu-profile-section" className="px-2 mb-3 text-[10px] uppercase tracking-[0.24em] font-black font-mono text-white/45">02 / ЛИЧНЫЙ КАБИНЕТ</h3>
+                      <div className="space-y-2.5">
+                        <button
+                          type="button"
+                          data-testid="menu-cabinet"
+                          onClick={() => { playSound("click"); setCabinetTab("hero"); setIsMenuOpen(false); setIsCabinetOpen(true); }}
+                          className="w-full flex items-center gap-3 rounded-xl px-4 py-3.5 bg-[#101d29] border border-[#00ffaa]/25 text-left hover:border-[#00ffaa]/60 transition-colors cursor-pointer"
+                        >
+                          <Zap size={18} className="text-[#00ffaa]" />
+                          <span className="flex-1 text-xs font-black tracking-wide">Мой кабинет</span>
+                          <span aria-hidden="true" className="text-white/40">›</span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="menu-prizes"
+                          onClick={() => { playSound("click"); setCabinetTab("prizes"); setIsMenuOpen(false); setIsCabinetOpen(true); }}
+                          className="w-full flex items-center gap-3 rounded-xl px-4 py-3.5 bg-[#101d29] border border-[#f5c542]/20 text-left hover:border-[#f5c542]/60 transition-colors cursor-pointer"
+                        >
+                          <Award size={18} className="text-[#f5c542]" />
+                          <span className="flex-1 text-xs font-black tracking-wide">МОИ ПРИЗЫ</span>
+                          <span aria-hidden="true" className="text-white/40">›</span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="menu-settings"
+                          onClick={() => { playSound("click"); setIsMenuOpen(false); setIsAudioSettingsOpen(true); }}
+                          className="w-full flex items-center gap-3 rounded-xl px-4 py-3.5 bg-[#101d29] border border-white/10 text-left hover:border-white/40 transition-colors cursor-pointer"
+                        >
+                          <Sliders size={18} className="text-[#a9a0ff]" />
+                          <span className="flex-1 text-xs font-black tracking-wide">НАСТРОЙКИ</span>
+                          <span aria-hidden="true" className="text-white/40">›</span>
+                        </button>
+                        {userRole === "admin" && (
+                          <button
+                            type="button"
+                            data-testid="menu-admin"
+                            onClick={() => { playSound("laser"); setIsMenuOpen(false); openAdminPanel(); }}
+                            className="w-full flex items-center gap-3 rounded-xl px-4 py-3.5 bg-[#101d29] border border-blue-400/25 text-left hover:border-blue-400/60 transition-colors cursor-pointer"
+                          >
+                            <Shield size={18} className="text-blue-400" />
+                            <span className="flex-1 text-xs font-black tracking-wide">АДМИНКА</span>
+                            <span aria-hidden="true" className="text-white/40">›</span>
+                          </button>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                  <div className="shrink-0 p-4 pb-[max(16px,env(safe-area-inset-bottom))] border-t border-white/10 bg-[#050c17]">
                     <button
-                      onClick={() => {
-                        playSound("laser");
-                        setIsMenuOpen(false);
-                        openAdminPanel();
-                      }}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-blue-500/15 hover:text-blue-400 transition text-left cursor-pointer font-bold tracking-wider"
-                    >
-                      <Shield size={14} className="text-blue-400" />
-                      <span>АДМИНКА</span>
-                    </button>
-                  )}
-
-                  <div className="border-t border-white/10 my-1"></div>
-
-                  {/* 6. ВЫЙТИ */}
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsMenuOpen(false);
-                      onLogout();
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-red-500/20 text-red-400 transition text-left cursor-pointer font-bold tracking-wider text-[11px]"
-                  >
-                    <LogOut size={14} />
-                    <span>ВЫЙТИ</span>
-                  </button>
-                </motion.div>
-              </>
+                      type="button"
+                      data-testid="menu-logout"
+                      onClick={() => { playSound("click"); setIsMenuOpen(false); onLogout(); }}
+                      className="w-full flex items-center justify-center gap-3 rounded-xl border border-red-400/30 bg-red-500/5 px-4 py-3.5 text-red-300 hover:bg-red-500/15 transition-colors"
+                    ><LogOut size={17} /><span className="text-xs font-black tracking-wider">ВЫЙТИ ИЗ ИГРЫ</span></button>
+                  </div>
+                </motion.nav>
+              </motion.div>
             )}
           </AnimatePresence>
-        </div>
-
-        {/* 2. ЗАПРОСИТЬ ХОД button */}
-        <div className="pointer-events-auto flex-1 max-w-[170px] flex justify-center">
-          <button
-            onClick={() => {
-              playSound("click");
-              // Открываем выбор количества: игроку с несколькими покупками
-              // не нужно слать несколько запросов подряд.
-              setIsTurnRequestOpen(true);
-            }}
-            disabled={!!me?.turnRequested || hasApprovedTurn || isMyTurn}
-            className={`w-full py-2 px-2.5 border rounded-xl text-[10px] font-black transition-all duration-200 font-mono tracking-wider uppercase text-center shadow-lg truncate flex items-center justify-center gap-1 ${
-              hasApprovedTurn || isMyTurn
-                ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.3)]"
-                : me?.turnRequested
-                  ? "bg-amber-500/20 border-amber-400/50 text-amber-300 animate-pulse"
-                  : me?.activeBonus
-                    ? "bg-yellow-500/20 border-yellow-400/80 text-yellow-300 hover:bg-yellow-500/30 cursor-pointer shadow-[0_0_15px_rgba(234,179,8,0.25)]"
-                    : "bg-black/90 border-[#00ffaa]/50 text-[#00ffaa] hover:bg-[#00ffaa]/20 hover:border-[#00ffaa] cursor-pointer active:scale-95 shadow-[0_0_12px_rgba(0,255,170,0.15)]"
-            }`}
-          >
-            {hasApprovedTurn
-              ? myTurnsLeft > 1
-                ? `ХОДОВ: ${myTurnsLeft}`
-                : "ХОД ОДОБРЕН"
-              : isMyTurn
-                ? "ХОД ОДОБРЕН"
-                : me?.turnRequested
-                  ? me?.activeBonus
-                    ? "ЖДЕТ СПИСАНИЯ 🎁"
-                    : me?.turnsRequested && me.turnsRequested > 1
-                      ? `ЗАПРОШЕНО: ${me.turnsRequested}`
-                      : "ЗАПРОШЕНО"
-                  : me?.activeBonus
-                    ? "ЗАПРОС С БОНУСОМ 🎁"
-                    : "ЗАПРОСИТЬ ХОД"}
-          </button>
-        </div>
-
-        {/* 3. ЧАТ button */}
-        <div className="pointer-events-auto">
-          <button
-            onClick={() => {
-              playSound("click");
-              setIsChatDrawerOpen(!isChatDrawerOpen);
-              if (!isChatDrawerOpen) setIsPlayersDrawerOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-[10px] font-black transition duration-200 cursor-pointer font-mono tracking-wider shadow-lg ${
-              isChatDrawerOpen
-                ? "bg-purple-500 text-white border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)]"
-                : "bg-black/90 border-purple-500/50 text-purple-400 hover:bg-purple-500/15"
-            }`}
-          >
-            <MessageSquare size={14} />
-            <span>ЧАТ</span>
-          </button>
-        </div>
-      </div>
 
       {/* --- PLAYERS SIDE DRAWER (Left Side Slide-in) --- */}
       <AnimatePresence>
@@ -707,7 +692,7 @@ export default function BoardView({
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="absolute left-0 top-0 bottom-0 w-[290px] bg-black/95 backdrop-blur-xl border-r border-[#00ffaa]/20 z-50 p-5 flex flex-col gap-5 select-none pointer-events-auto shadow-2xl"
+              className="absolute left-0 top-0 bottom-0 w-[290px] bg-black/95 backdrop-blur-xl border-r border-[#00ffaa]/20 z-50 p-5 pt-[max(20px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))] flex flex-col gap-5 select-none pointer-events-auto shadow-2xl"
             >
               <div className="flex justify-between items-center border-b border-white/10 pb-3.5">
                 <span className="font-mono text-[10px] font-black text-[#00ffaa] uppercase tracking-[0.2em]">
@@ -715,9 +700,10 @@ export default function BoardView({
                 </span>
                 <button
                   onClick={() => setIsPlayersDrawerOpen(false)}
-                  className="text-white/60 hover:text-white cursor-pointer"
+                  className="min-w-[44px] min-h-[44px] -mr-2 -mt-2 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
+                  aria-label="Закрыть список игроков"
                 >
-                  <X size={15} />
+                  <X size={18} />
                 </button>
               </div>
 
@@ -927,7 +913,7 @@ export default function BoardView({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="absolute right-0 top-0 bottom-0 w-[300px] bg-black/95 backdrop-blur-xl border-l border-purple-500/20 z-50 p-5 flex flex-col gap-4 select-none pointer-events-auto shadow-2xl"
+              className="absolute right-0 top-0 bottom-0 w-[300px] bg-black/95 backdrop-blur-xl border-l border-purple-500/20 z-50 p-5 pt-[max(20px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))] flex flex-col gap-4 select-none pointer-events-auto shadow-2xl"
             >
               <div className="flex justify-between items-center border-b border-white/10 pb-3.5">
                 <div className="flex bg-black border border-white/10 p-0.5 rounded-lg font-mono text-[9px] font-bold">
@@ -936,7 +922,7 @@ export default function BoardView({
                       playSound("click");
                       setActiveChatTab("chat");
                     }}
-                    className={`px-3 py-1.5 rounded-md transition duration-200 cursor-pointer ${activeChatTab === "chat" ? "bg-purple-500/20 text-white" : "text-gray-400"}`}
+                    className={`min-h-[44px] px-3 py-1.5 rounded-md transition duration-200 cursor-pointer flex items-center justify-center ${activeChatTab === "chat" ? "bg-purple-500/20 text-white" : "text-gray-400"}`}
                   >
                     ЧАТ
                   </button>
@@ -945,16 +931,17 @@ export default function BoardView({
                       playSound("click");
                       setActiveChatTab("logs");
                     }}
-                    className={`px-3 py-1.5 rounded-md transition duration-200 cursor-pointer ${activeChatTab === "logs" ? "bg-cyan-500/20 text-[#00FFFF]" : "text-gray-400"}`}
+                    className={`min-h-[44px] px-3 py-1.5 rounded-md transition duration-200 cursor-pointer flex items-center justify-center ${activeChatTab === "logs" ? "bg-cyan-500/20 text-[#00FFFF]" : "text-gray-400"}`}
                   >
                     СОБЫТИЯ
                   </button>
                 </div>
                 <button
                   onClick={() => setIsChatDrawerOpen(false)}
-                  className="text-white/60 hover:text-white cursor-pointer"
+                  className="min-w-[44px] min-h-[44px] -mr-2 -mt-2 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
+                  aria-label="Закрыть чат"
                 >
-                  <X size={15} />
+                  <X size={18} />
                 </button>
               </div>
 
@@ -1012,19 +999,20 @@ export default function BoardView({
                         </button>
                       </div>
                     )}
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 items-center">
                     <input
                       type="text"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       placeholder={replyTo ? "Ваш ответ..." : "Сообщение..."}
-                      className="flex-1 bg-black border border-white/10 rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-purple-500 font-sans"
+                      className="flex-1 min-h-[44px] bg-black border border-white/10 rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-purple-500 font-sans"
                     />
                     <button
                       type="submit"
-                      className="bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500 hover:text-white px-3 py-2 rounded-lg transition duration-200 cursor-pointer"
+                      aria-label="Отправить сообщение"
+                      className="min-w-[44px] min-h-[44px] bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500 hover:text-white px-3 py-2 rounded-lg transition duration-200 cursor-pointer flex items-center justify-center shrink-0"
                     >
-                      <Send size={12} />
+                      <Send size={15} />
                     </button>
                     </div>
                   </form>
@@ -1080,28 +1068,142 @@ export default function BoardView({
 
       {/* --- MAIN STAGE (Centered full height map container) --- */}
       <main className="h-full w-full flex items-center justify-center relative z-10 p-0 overflow-hidden">
-        <div
-          ref={boardRef}
-          onClick={handleBoardClick}
-          className="board-container relative h-full w-full max-w-[56.25vh] aspect-[9/16] bg-black shadow-[0_0_80px_rgba(0,0,0,0.9)] flex-shrink-0"
-        >
+        <div className="relative h-full w-full max-w-[56.25vh] bg-[#050811] shadow-[0_0_80px_rgba(0,0,0,0.9)] flex-shrink-0 overflow-hidden">
+          {/* Игровая карта 9:16: приподнята так, чтобы нижняя часть поля (клетка 0 СТАРТ) не перекрывалась кнопкой броска */}
+          <div
+            ref={boardRef}
+            onClick={handleBoardClick}
+            className="board-container absolute top-0 left-0 right-0 bottom-[126px] aspect-[9/16] max-w-[calc((100vh-126px)*9/16)] mx-auto overflow-hidden select-none"
+          >
+            {/* --- TOP FLOATING OVERLAY HUD --- */}
+            <div className="absolute top-0 left-0 right-0 pt-[max(6px,env(safe-area-inset-top))] px-2.5 z-40 pointer-events-none flex flex-col items-center">
+              {/* Top Cyber Banner: HCG — HAPSTORE CYBER GAME */}
+              <div className="w-full flex items-center justify-center gap-2 py-0.5 select-none pointer-events-none mb-1">
+                <div className="h-[1px] w-6 md:w-10 bg-gradient-to-r from-transparent to-[#00f0ff]" />
+                <span className="font-syne font-black italic tracking-[0.22em] text-[#00f0ff] text-[10px] md:text-xs drop-shadow-[0_0_8px_rgba(0,240,255,0.8)]">
+                  HCG — HAPSTORE CYBER GAME
+                </span>
+                <div className="h-[1px] w-6 md:w-10 bg-gradient-to-l from-transparent to-[#00f0ff]" />
+              </div>
+
+              {/* Top Status Cards Row: Hero Card | Core 64 Capsule | Lap Capsule */}
+              <div className="w-full flex items-center justify-between gap-1.5 pointer-events-auto select-none">
+                {/* Left: Hero Card with chamfered corner */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound("click");
+                    setCabinetTab("hero");
+                    setIsCabinetOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-2 py-1 bg-[#050c18]/90 border border-[#00f0ff]/60 hover:border-[#00f0ff] hover:bg-[#071529]/95 transition cursor-pointer shadow-[0_0_15px_rgba(0,240,255,0.3)] text-left min-w-0 rounded-xl"
+                  style={{
+                    clipPath: "polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)",
+                  }}
+                  title="Окно героя"
+                >
+                  <div className="w-[32px] h-[32px] rounded-full border border-[#00f0ff] overflow-hidden bg-black/60 shrink-0 shadow-[0_0_8px_rgba(0,240,255,0.5)]">
+                    <img
+                      src={me?.avatar || me?.chipImage || "/avatars/m_1.svg"}
+                      alt="Hero"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col min-w-0 leading-tight">
+                    <span className="text-[7.5px] font-mono text-[#00f0ff]/80 uppercase leading-none font-bold">
+                      Герой
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9.5px] font-mono font-black text-white truncate max-w-[75px]">
+                        {CLASS_LABEL[me?.characterClass || "picker"] || me?.alias || "Хром-джек"}
+                      </span>
+                      <span className="text-[8px] text-[#00f0ff] font-bold">˅</span>
+                    </div>
+                    {/* Level & XP */}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[8px] font-mono font-black text-white">
+                        Ур. {(me as any)?.characterLevel || 7}
+                      </span>
+                      <div className="w-10 h-1.5 bg-black/60 border border-[#00f0ff]/40 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#00f0ff] to-[#00ffaa] shadow-[0_0_6px_#00f0ff]"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.max(
+                                15,
+                                Math.round(
+                                  (((me as any)?.characterExp || 70) /
+                                    (((me as any)?.characterLevel || 7) * 200)) *
+                                    100
+                                )
+                              )
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Center: Core 64 Goal Plaque as in screenshot */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound("click");
+                    const cell64 = gameState.cells?.find((c) => c.id === 64);
+                    if (cell64) setSelectedCell(cell64);
+                  }}
+                  className="flex flex-col items-center justify-center px-3.5 py-1 bg-gradient-to-b from-[#081830]/95 to-[#040a14]/95 border border-[#00f0ff]/70 hover:border-[#00ffaa] transition cursor-pointer shadow-[0_0_16px_rgba(0,240,255,0.4)] select-none shrink-0 rounded-2xl"
+                  title="Главный приз"
+                >
+                  <div className="font-mono text-[9px] md:text-[10px] font-black text-[#00f0ff] tracking-wider uppercase leading-none">
+                    ЯДРО <span className="text-white/60">•</span> <span className="text-[#facc15]">клетка 64</span>
+                  </div>
+                  <span className="font-mono text-[7.5px] md:text-[8px] text-white/95 tracking-tight whitespace-nowrap mt-0.5 drop-shadow-[0_0_4px_rgba(0,240,255,0.5)]">
+                    Главный приз — МЕГА-КРИСТАЛЛ
+                  </span>
+                </button>
+
+                {/* Right: Round Lap Capsule */}
+                <div
+                  className="px-3 py-1.5 bg-gradient-to-b from-[#081830]/95 to-[#040a14]/95 border border-[#00f0ff]/70 shadow-[0_0_15px_rgba(0,240,255,0.35)] text-white font-mono text-[10px] md:text-xs font-black tracking-wider uppercase select-none rounded-xl flex items-center justify-center shrink-0"
+                >
+                  КРУГ {((me as any)?.lapsCompleted ?? (me as any)?.lap ?? 0) + 1}
+                </div>
+              </div>
+            </div>
+
+          {/* --- LEFT VERTICAL INVENTORY DOCK (AS PER OWNER SCREENSHOT) --- */}
+          <div className="absolute top-[72px] left-2 z-30 pointer-events-auto">
+            <InventoryBar
+              inventory={me?.inventory}
+              activeItem={selectedItem}
+              onToggleItem={(item) => setSelectedItem((prev) => (prev === item ? null : item))}
+              disabled={isRolling || !isMyTurn}
+            />
+          </div>
+
           {/* Background Map: Video with GPU acceleration or Static Image in Eco Mode */}
           {ecoMode ? (
             <img
-              src="/BoardHAP.png?v=14"
+              src="/BoardHAP.png?v=16"
               alt="Игровое поле"
               className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
             />
           ) : (
             <video
               ref={boardVideoRef}
-              src="/BoardHAP.mp4?v=14"
+              src="/BoardHAP.mp4?v=16"
               autoPlay
               loop
               muted
               playsInline
               preload="metadata"
-              poster="/BoardHAP.png?v=14"
+              poster="/BoardHAP.png?v=16"
               disablePictureInPicture
               disableRemotePlayback
               className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 [transform:translateZ(0)]"
@@ -1122,7 +1224,12 @@ export default function BoardView({
             >
               <path
                 d={gameState.cells
-                  .map((cell, idx) => `${idx === 0 ? "M" : "L"} ${cell.x} ${cell.y}`)
+                  .map((cell, idx) => {
+                    const live = liveDragMap[cell.id];
+                    const px = live ? live.x : cell.x;
+                    const py = live ? live.y : cell.y;
+                    return `${idx === 0 ? "M" : "L"} ${px} ${py}`;
+                  })
                   .join(" ")}
                 fill="none"
                 stroke="rgba(0, 255, 170, 0.4)"
@@ -1131,6 +1238,16 @@ export default function BoardView({
                 className="animate-[dash_10s_linear_infinite]"
               />
             </svg>
+          )}
+
+          {/* Режим калибровки: админ-индикатор */}
+          {Boolean(gameState.calibrationMode && userRole === "admin") && (
+            <div className="absolute top-[62px] left-1/2 -translate-x-1/2 z-40 bg-black/90 border border-[#00f0ff] px-3 py-1 rounded-full text-center shadow-[0_0_15px_rgba(0,240,255,0.5)] pointer-events-auto flex items-center gap-1.5 select-none animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]" />
+              <span className="font-mono text-[8.5px] font-bold text-white tracking-wider uppercase">
+                РЕЖИМ КАЛИБРОВКИ: ТЯНИТЕ КЛЕТКИ ПАЛЬЦЕМ
+              </span>
+            </div>
           )}
 
           {/* Cyber Particle Burst Overlay */}
@@ -1165,6 +1282,23 @@ export default function BoardView({
                 getCellColor={getCellColor}
                 calibrationMode={isCalibrationActive}
                 isDropBox={DROP_BOX_CELL_IDS.includes(cell.id)}
+                boardElement={boardRef.current}
+                onCalibrateMove={(cellId, x, y) => {
+                  setLiveDragMap((prev) => ({ ...prev, [cellId]: { x, y } }));
+                }}
+                onCalibrateEnd={(cellId, x, y) => {
+                  setLiveDragMap((prev) => {
+                    const next = { ...prev };
+                    delete next[cellId];
+                    return next;
+                  });
+                  onCalibrateCell({
+                    cellId,
+                    x: parseFloat(x.toFixed(2)),
+                    y: parseFloat(y.toFixed(2)),
+                  });
+                  onSelectCalibrationCell?.(cellId);
+                }}
                 onClick={() => {
                   playSound("click");
                   triggerCellBurst(cell.id);
@@ -1240,13 +1374,17 @@ export default function BoardView({
                 cell.type === CellType.SNAKE ||
                 cell.type === CellType.BITCOIN;
 
+              const liveCell = liveDragMap[currentCellId];
+              const cellPosX = liveCell ? liveCell.x : cell.x;
+              const cellPosY = liveCell ? liveCell.y : cell.y;
+
               return (
                 <div
                   key={player.id}
                   className="absolute z-30 pointer-events-none"
                   style={{
-                    left: `${cell.x + offsetX}%`,
-                    top: `${cell.y + offsetY}%`,
+                    left: `${cellPosX + offsetX}%`,
+                    top: `${cellPosY + offsetY}%`,
                   }}
                 >
                   <div className="relative -translate-x-1/2 -translate-y-1/2">
@@ -1260,141 +1398,261 @@ export default function BoardView({
                 </div>
               );
             })}
+          </div>
 
-          {/* --- BOTTOM GAME BOARD ACTION HUD PANEL --- */}
-          {/* 1. Center: Active Prize Control Bonus Notice */}
+          {/* --- BOTTOM GAME BOARD ACTION HUD PANEL (Расположен строго ПОД картой) --- */}
+          {/* 1. Active Prize Control Bonus Notice */}
           {me?.activeBonus && (
-            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center">
-              <div className="bg-yellow-950/95 border-2 border-yellow-500/70 rounded-xl p-3 text-center w-full max-w-xs md:max-w-sm flex flex-col items-center gap-1.5 pointer-events-none">
-                <div className="flex items-center gap-1.5 font-syne text-[11px] text-yellow-400 font-extrabold uppercase tracking-wider">
-                  <Gift size={16} className="text-yellow-400 animate-bounce" />
-                  СИСТЕМА КОНТРОЛЯ ПРИЗОВ
+            <div className="absolute bottom-[130px] left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex flex-col items-center w-full max-w-xs px-2">
+              <div className="bg-yellow-950/95 border border-yellow-500/70 rounded-xl p-2.5 text-center w-full shadow-[0_0_15px_rgba(234,179,8,0.3)] flex flex-col items-center gap-1">
+                <div className="flex items-center gap-1.5 font-syne text-[10px] text-yellow-400 font-extrabold uppercase tracking-wider">
+                  <Gift size={14} className="text-yellow-400 animate-bounce" />
+                  <span>СТАТУС: ЖДЁТ СПИСАНИЯ 🎁</span>
                 </div>
-                <div className="text-[11px] font-mono font-bold text-yellow-300 bg-black/60 px-2.5 py-1 rounded border border-yellow-500/40">
-                  🎁 {me.activeBonus.extra || me.activeBonus.name}
+                <div className="text-[11px] font-mono font-bold text-yellow-300 bg-black/60 px-2 py-0.5 rounded border border-yellow-500/40 truncate max-w-full">
+                  {cleanPrizeText(me.activeBonus.extra || me.activeBonus.name)}
                 </div>
-                <p className="text-[10px] font-sans text-yellow-100/90 leading-tight">
-                  В пачке остаётся самый ценный приз (кристаллы выше скидок). Пока есть броски
-                  пачки — ходите. Новую пачку откроют после выдачи приза в магазине.
+                <p className="text-[9px] font-sans text-yellow-100/80 leading-tight">
+                  Пока есть броски пачки — ходите. Новую пачку откроют после выдачи приза на кассе.
                 </p>
               </div>
             </div>
           )}
 
-          {/* 2. Bottom-Left Corner: Inventory Bar & Compact Dice Roll Button */}
-          <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-[80] pointer-events-auto flex flex-col items-center gap-2">
-            {(me?.prizeLog || [])
-              .filter((r) => !r.redeemed && typeof r.extra === "string" && r.extra.startsWith("HAP-"))
-              .slice(-2)
-              .map((r) => (
-                <div
-                  key={r.extra}
-                  className="w-full max-w-[160px] bg-black/80 border border-[#f5c542] rounded-lg px-2 py-1 text-center"
-                >
-                  <div className="font-mono text-[8px] text-white/60 uppercase">купон кейса</div>
-                  <div className="font-mono font-black text-[11px] text-[#f5c542] break-all">
-                    {r.extra}
-                  </div>
-                </div>
-              ))}
-            {/* Quick Cyber-Inventory Bar */}
-            <InventoryBar
-              inventory={me?.inventory}
-              activeItem={selectedItem}
-              onToggleItem={(item) => setSelectedItem((prev) => (prev === item ? null : item))}
-              disabled={isRolling || !isMyTurn}
-            />
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isRolling) {
-                  playSound("click");
-                  return;
-                }
-                hapticImpact("heavy");
-                handleRoll();
-              }}
-              disabled={false}
-              className={`relative group flex flex-col items-center justify-center transition-all duration-300 ${
-                isMyTurn ? "cursor-pointer hover:scale-105 active:scale-95" : "cursor-not-allowed opacity-75"
-              }`}
-            >
-              {/* Neon Aura Glow when active */}
-              {isMyTurn && (
-                <div className="absolute inset-0 rounded-full bg-[#ff7a18]/40 animate-pulse scale-110 pointer-events-none" />
-              )}
-
-              {/* Dice Graphic Box */}
+          {/* 2. Cyber-Drop Coupons Floating Indicator */}
+          {(me?.prizeLog || [])
+            .filter((r) => !r.redeemed && typeof r.extra === "string" && r.extra.startsWith("HAP-"))
+            .slice(-1)
+            .map((r) => (
               <div
-                className={`relative w-12 h-12 md:w-14 md:h-14 transition-all duration-300 flex items-center justify-center ${
-                  isMyTurn
-                    ? "drop-shadow-[0_0_12px_rgba(255,122,24,0.8)]"
-                    : "drop-shadow-[0_0_6px_rgba(255,255,255,0.2)] grayscale-[30%]"
-                }`}
+                key={r.extra}
+                className="absolute bottom-[130px] left-3 z-30 pointer-events-auto bg-black/85 border border-[#f5c542] rounded-lg px-2.5 py-1 text-center shadow-lg"
               >
-                <img
-                  src="/Dice.png?v=14"
-                  alt="Dice"
-                  className="w-[44px] h-[44px] object-contain filter drop-shadow-[0_0_10px_rgba(255,122,24,0.85)]"
-                  style={{ width: "44px", height: "44px" }}
-                />
-                <div className="absolute inset-0 rounded-xl bg-transparent" />
+                <div className="font-mono text-[8px] text-white/60 uppercase">КУПОН ДРОПА</div>
+                <div className="font-mono font-black text-[10px] text-[#f5c542] tracking-wider">
+                  {r.extra}
+                </div>
               </div>
+            ))}
+        </div>
+        {/* --- END OF BOARD CONTAINER --- */}
 
-              {/* 2-line Neat Compact Text Underneath */}
-              <div className="mt-0.5 text-center font-syne font-black uppercase tracking-wider text-[9px] md:text-[10px] leading-tight select-none">
-                <span
-                  className={`${
-                    isMyTurn
-                      ? "text-[#00ffaa] drop-shadow-[0_0_6px_rgba(0,255,170,0.9)]"
-                      : "text-gray-300"
-                  }`}
-                >
-                  {isRolling ? <>БРОСОК...</> : <>БРОСИТЬ КУБИК</>}
-                </span>
-                {/* Остаток пачки: игрок должен видеть, что ждать одобрения не нужно */}
-                {myTurnsLeft > 1 && !isRolling && (
-                  <span className="block text-[8px] md:text-[9px] text-[#00ffaa]/80 font-mono">
-                    ОСТАЛОСЬ {myTurnsLeft}
-                  </span>
-                )}
-                {!isMyTurn && !isRolling && (
-                  <span className="block text-[8px] md:text-[9px] text-amber-300/90 font-mono">
-                    СНАЧАЛА ЗАПРОСИТЕ ХОД
-                  </span>
-                )}
-              </div>
-            </button>
+        {/* --- ACTION CTA DOCK: TURNS COUNTER & ROLL BUTTON (Centered above navigation bar) --- */}
+        <div className="absolute bottom-[56px] left-0 right-0 z-30 pointer-events-none flex flex-col items-center justify-center gap-1.5 px-4">
+          {/* Turns Counter Plaque: ВАШИ ХОДЫ / ХОД ОДОБРЕН */}
+          <div className="pointer-events-auto px-4 py-1 bg-[#050c18]/95 border border-[#00f0ff]/70 rounded-full flex items-center gap-2 shadow-[0_0_15px_rgba(0,240,255,0.4)] select-none">
+            <span className="font-mono text-[9px] md:text-[10px] font-bold text-white/90 tracking-wider">
+              {myTurnsLeft > 1
+                ? `ХОДОВ: ${myTurnsLeft}`
+                : hasApprovedTurn || isMyTurn
+                ? "ХОД ОДОБРЕН"
+                : "ВАШИ ХОДЫ:"}
+            </span>
+            {myTurnsLeft > 1 ? (
+              <span className="font-mono text-[9px] font-black text-[#00ffaa] drop-shadow-[0_0_8px_rgba(0,255,170,0.85)]">
+                ОСТАЛОСЬ {myTurnsLeft}
+              </span>
+            ) : !hasApprovedTurn && !isMyTurn ? (
+              <span className="font-mono text-[13px] md:text-[14px] font-black text-[#facc15] drop-shadow-[0_0_8px_rgba(250,204,21,0.85)]">
+                {myTurnsLeft}
+              </span>
+            ) : null}
           </div>
 
-          {/*
-            3. Правый нижний угол: остаток ходов.
+          {/* Wide Cyber CTA Button */}
+          <div className="pointer-events-auto w-full max-w-[280px]">
+            {hasApprovedTurn || isMyTurn ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isRolling) {
+                    playSound("click");
+                    return;
+                  }
+                  hapticImpact("heavy");
+                  handleRoll();
+                }}
+                disabled={isRolling}
+                className="w-full relative group h-[44px] px-4 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-black font-black uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-[0_0_24px_rgba(245,158,11,0.85)] hover:brightness-110 active:scale-95 transition cursor-pointer select-none rounded-xl border border-yellow-200"
+                style={{
+                  clipPath: "polygon(12px 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 12px 100%, 0 50%)",
+                }}
+                title="Бросить кубик"
+              >
+                <div className="relative w-7 h-7 shrink-0 flex items-center justify-center">
+                  <img
+                    src="/Dice.png?v=16"
+                    alt="Кубик"
+                    className="w-6 h-6 object-contain drop-shadow-[0_0_6px_rgba(0,0,0,0.8)] relative z-10"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "/assets/ui/icon_loaded_dice.png";
+                    }}
+                  />
+                </div>
+                <span className="font-syne font-black text-sm text-black tracking-wider drop-shadow-sm">
+                  {isRolling ? "БРОСОК..." : "БРОСИТЬ КУБИК"}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  playSound("click");
+                  setIsTurnRequestOpen(true);
+                }}
+                disabled={!!me?.turnRequested}
+                className={`w-full h-[44px] px-4 border font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(0,255,170,0.3)] transition active:scale-95 cursor-pointer rounded-xl ${
+                  me?.turnRequested
+                    ? "bg-amber-500/20 border-amber-400 text-amber-300 animate-pulse"
+                    : "bg-[#050c18]/95 border-[#00ffaa] text-[#00ffaa] hover:bg-[#00ffaa]/20"
+                }`}
+                style={{
+                  clipPath: "polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%)",
+                }}
+                title="Запросить ход"
+              >
+                <div className="relative w-6 h-6 shrink-0 flex items-center justify-center">
+                  <img
+                    src="/Dice.png?v=16"
+                    alt="Кубик"
+                    className={`w-5 h-5 object-contain ${
+                      me?.turnRequested ? "opacity-90" : "opacity-75 grayscale-[25%]"
+                    }`}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "/assets/ui/icon_loaded_dice.png";
+                    }}
+                  />
+                </div>
+                <span>
+                  {me?.turnRequested
+                    ? me?.turnsRequested && me.turnsRequested > 1
+                      ? `ЗАПРОШЕНО: ${me.turnsRequested}`
+                      : "ХОД ЗАПРОШЕН"
+                    : "ЗАПРОСИТЬ ХОД"}
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
 
-            Здесь был обратный отсчёт 12 часов. Ограничения по времени больше
-            нет, а счётчик, который никуда не бежит, только пугает игрока —
-            вместо него показываем то, что действительно имеет значение:
-            сколько бросков осталось.
-          */}
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="absolute bottom-2 right-2 md:bottom-3 md:right-3 z-40 pointer-events-auto flex flex-col items-center"
-          >
-            <div className="bg-black/90 backdrop-blur-md border border-cyan-500/50 rounded-xl px-2.5 py-1.5 shadow-[0_0_14px_rgba(6,182,212,0.35)] flex flex-col items-center gap-0.5 min-w-[85px] md:min-w-[100px]">
-              <div className="flex items-center gap-1 font-mono text-[8px] md:text-[9px] text-cyan-400 font-extrabold uppercase tracking-widest">
-                <Clock size={11} className="text-cyan-400" />
-                <span>БЕЗ ЛИМИТА</span>
-              </div>
-              <div className="font-mono text-xs md:text-sm font-black text-white tracking-wider drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]">
-                {hasApprovedTurn ? `${myTurnsLeft} 🎲` : "—"}
-              </div>
-              <div className="text-[7px] md:text-[8px] font-sans text-cyan-200/80 font-bold tracking-normal uppercase">
-                {getTurnStatusText()}
-              </div>
-            </div>
-          </motion.div>
+        {/* --- BOTTOM NAVIGATION BAR (6 BUTTONS AS PER OWNER SCREENSHOT) --- */}
+        <div className="absolute bottom-0 left-0 right-0 z-50 pointer-events-auto bg-[#030712]/95 border-t border-[#00f0ff]/30 backdrop-blur-xl px-1.5 pt-1.5 pb-[max(6px,env(safe-area-inset-bottom))]">
+          <div className="grid grid-cols-6 gap-1 w-full max-w-md mx-auto">
+            {/* 1. МЕНЮ */}
+            <button
+              type="button"
+              onClick={() => {
+                playSound("click");
+                hapticSelection();
+                setIsMenuOpen(true);
+              }}
+              className="min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-xl bg-gradient-to-b from-[#081830]/90 to-[#020712]/95 border border-[#00f0ff]/40 hover:border-[#00f0ff] hover:shadow-[0_0_12px_rgba(0,240,255,0.4)] transition-all duration-150 active:scale-95 cursor-pointer text-[#00f0ff]"
+              title="Главное меню"
+            >
+              <LayoutGrid size={16} />
+              <span className="font-mono text-[8px] font-bold tracking-tight text-white/95 uppercase leading-none">
+                МЕНЮ
+              </span>
+            </button>
+
+            {/* 2. ЧАТ */}
+            <button
+              type="button"
+              onClick={() => {
+                playSound("click");
+                hapticSelection();
+                setIsChatDrawerOpen(true);
+              }}
+              className="relative min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-xl bg-gradient-to-b from-[#081830]/90 to-[#020712]/95 border border-[#00f0ff]/40 hover:border-[#00f0ff] hover:shadow-[0_0_12px_rgba(0,240,255,0.4)] transition-all duration-150 active:scale-95 cursor-pointer text-[#00f0ff]"
+              title="Чат"
+            >
+              <MessageSquare size={16} />
+              <span className="font-mono text-[8px] font-bold tracking-tight text-white/95 uppercase leading-none">
+                ЧАТ
+              </span>
+              {(gameState.chatMessages?.length || 0) > 0 && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[#00ffaa] rounded-full animate-ping" />
+              )}
+            </button>
+
+            {/* 3. ИГРОКИ */}
+            <button
+              type="button"
+              onClick={() => {
+                playSound("click");
+                hapticSelection();
+                setIsPlayersDrawerOpen(true);
+              }}
+              className="min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-xl bg-gradient-to-b from-[#081830]/90 to-[#020712]/95 border border-[#00f0ff]/40 hover:border-[#00f0ff] hover:shadow-[0_0_12px_rgba(0,240,255,0.4)] transition-all duration-150 active:scale-95 cursor-pointer text-[#00f0ff]"
+              title="Игроки и рейтинг"
+            >
+              <BarChart2 size={16} />
+              <span className="font-mono text-[8px] font-bold tracking-tight text-white/95 uppercase leading-none">
+                ИГРОКИ
+              </span>
+            </button>
+
+            {/* 4. МОИ ПРИЗЫ */}
+            <button
+              type="button"
+              onClick={() => {
+                playSound("click");
+                hapticSelection();
+                setCabinetTab("prizes");
+                setIsCabinetOpen(true);
+              }}
+              className="min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-xl bg-gradient-to-b from-[#081830]/90 to-[#020712]/95 border border-[#00f0ff]/40 hover:border-[#00f0ff] hover:shadow-[0_0_12px_rgba(0,240,255,0.4)] transition-all duration-150 active:scale-95 cursor-pointer text-[#00f0ff]"
+              title="Мои призы"
+            >
+              <Trophy size={16} />
+              <span className="font-mono text-[8px] font-bold tracking-tight text-white/95 uppercase leading-none">
+                МОИ ПРИЗЫ
+              </span>
+            </button>
+
+            {/* 5. Мой кабинет */}
+            <button
+              type="button"
+              onClick={() => {
+                playSound("click");
+                hapticSelection();
+                setCabinetTab("hero");
+                setIsCabinetOpen(true);
+              }}
+              className="min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-xl bg-gradient-to-b from-[#081830]/90 to-[#020712]/95 border border-[#00f0ff]/40 hover:border-[#00f0ff] hover:shadow-[0_0_12px_rgba(0,240,255,0.4)] transition-all duration-150 active:scale-95 cursor-pointer text-[#00f0ff]"
+              title="Личный кабинет"
+            >
+              <User size={16} />
+              <span className="font-mono text-[8px] font-bold tracking-tight text-white/95 uppercase leading-none">
+                Мой кабинет
+              </span>
+            </button>
+
+            {/* 6. Герой */}
+            <button
+              type="button"
+              onClick={() => {
+                playSound("click");
+                hapticSelection();
+                setCabinetTab("hero");
+                setIsCabinetOpen(true);
+              }}
+              className="min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-xl bg-gradient-to-b from-[#081830]/90 to-[#020712]/95 border border-[#00f0ff]/40 hover:border-[#00f0ff] hover:shadow-[0_0_12px_rgba(0,240,255,0.4)] transition-all duration-150 active:scale-95 cursor-pointer text-[#00f0ff]"
+              title="Выбор героя"
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2C6.48 2 2 6.48 2 12C2 15.5 3.8 18.6 6.5 20.4L7 17C7 16.4 7.4 16 8 16H16C16.6 16 17 16.4 17 17L17.5 20.4C20.2 18.6 22 15.5 22 12C22 6.48 17.52 2 12 2Z" />
+                <path d="M9 11L10 13H14L15 11" />
+                <line x1="8" y1="9" x2="10" y2="9" />
+                <line x1="14" y1="9" x2="16" y2="9" />
+              </svg>
+              <span className="font-mono text-[8px] font-bold tracking-tight text-white/95 uppercase leading-none">
+                Герой
+              </span>
+            </button>
+          </div>
         </div>
       </main>
 
@@ -1402,7 +1660,7 @@ export default function BoardView({
       <AnimatePresence>
         {selectedCell && (
           <div
-            className="absolute inset-0 z-[45] flex items-center justify-center p-4 bg-black/70 pointer-events-auto"
+            className="fixed inset-0 z-[130] flex items-center justify-center p-4 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] bg-black/75 pointer-events-auto overflow-y-auto"
             onClick={() => setSelectedCell(null)}
           >
             <motion.div
@@ -1418,17 +1676,18 @@ export default function BoardView({
                 </span>
                 <button
                   onClick={() => setSelectedCell(null)}
-                  className="text-white/60 hover:text-white cursor-pointer"
+                  className="min-w-[44px] min-h-[44px] -mr-2 -mt-2 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
+                  aria-label="Закрыть превью клетки"
                 >
-                  <X size={15} />
+                  <X size={18} />
                 </button>
               </div>
               <div className="font-syne font-extrabold text-sm text-white uppercase tracking-wider">
                 {selectedCell.name}
               </div>
               <div className="bg-white/5 p-3 rounded-lg border border-white/5 text-[11px] leading-relaxed text-gray-300 font-sans">
-                <div className="text-[#00ffaa] font-bold mb-1">{describeEffect(selectedCell)}</div>
-                {selectedCell.description || "Обычная клетка."}
+                <div className="text-[#00ffaa] font-bold mb-1">{cleanPrizeText(describeEffect(selectedCell))}</div>
+                {cleanPrizeText(selectedCell.description) || "Обычная клетка."}
               </div>
               <div className="flex justify-between text-[10px] text-white/40 font-mono mt-1 pt-2 border-t border-white/5">
                 <span>ТИП: {selectedCell.type}</span>
@@ -1451,7 +1710,7 @@ export default function BoardView({
       {/* --- AUDIO SETTINGS MODAL --- */}
       <AnimatePresence>
         {isAudioSettingsOpen && (
-          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 pointer-events-auto">
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] bg-black/90 pointer-events-auto overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1465,7 +1724,7 @@ export default function BoardView({
                 <div className="flex items-center gap-2">
                   <Volume2 size={18} className="text-purple-400" />
                   <h3 className="text-white font-black text-sm tracking-widest font-sans uppercase">
-                    НАСТРОЙКИ ЗВУКА
+                    НАСТРОЙКИ
                   </h3>
                 </div>
                 <button
@@ -1473,9 +1732,10 @@ export default function BoardView({
                     playSound("click");
                     setIsAudioSettingsOpen(false);
                   }}
-                  className="p-1.5 bg-red-950/40 border border-red-500/40 rounded-full text-red-400 hover:bg-red-500 hover:text-white transition cursor-pointer"
+                  className="min-w-[44px] min-h-[44px] -mr-2 -mt-1 p-2 bg-red-950/40 border border-red-500/40 rounded-full text-red-400 hover:bg-red-500 hover:text-white transition cursor-pointer flex items-center justify-center"
+                  aria-label="Закрыть настройки"
                 >
-                  <X size={14} />
+                  <X size={16} />
                 </button>
               </div>
 
@@ -1668,7 +1928,7 @@ export default function BoardView({
 
       {/* --- ЗАПРОС НЕСКОЛЬКИХ ХОДОВ СРАЗУ --- */}
       {isTurnRequestOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 pointer-events-auto">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] bg-black/85 pointer-events-auto overflow-y-auto">
           <div className="relative w-full max-w-sm bg-[#151518] border-2 border-[#00ffaa]/40 rounded-2xl p-5 shadow-[0_0_40px_rgba(0,255,170,0.2)] font-sans text-[#e0e0e6] space-y-4">
             <div className="flex items-center justify-between border-b border-[#00ffaa]/20 pb-3">
               <span className="font-syne font-bold text-sm text-[#00ffaa] tracking-wider uppercase">
@@ -1676,9 +1936,10 @@ export default function BoardView({
               </span>
               <button
                 onClick={() => setIsTurnRequestOpen(false)}
-                className="text-white/60 hover:text-white cursor-pointer"
+                className="min-w-[44px] min-h-[44px] -mr-2 -mt-2 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
+                aria-label="Закрыть запрос ходов"
               >
-                <X size={15} />
+                <X size={18} />
               </button>
             </div>
 
@@ -1696,7 +1957,7 @@ export default function BoardView({
                     hapticSelection();
                     setRequestedTurns(n);
                   }}
-                  className={`py-2 rounded-lg font-mono font-black text-sm border transition cursor-pointer ${
+                  className={`min-h-[44px] py-2 rounded-lg font-mono font-black text-sm border transition cursor-pointer flex items-center justify-center ${
                     requestedTurns === n
                       ? "bg-[#00ffaa] text-black border-[#00ffaa] shadow-[0_0_12px_rgba(0,255,170,0.4)]"
                       : "bg-black/60 text-[#00ffaa] border-[#00ffaa]/30 hover:bg-[#00ffaa]/15"
@@ -1713,7 +1974,7 @@ export default function BoardView({
                   hapticSelection();
                   setRequestedTurns((v) => Math.max(1, v - 1));
                 }}
-                className="w-9 h-9 rounded-lg bg-white/5 border border-white/15 text-white font-mono text-base cursor-pointer hover:bg-white/10"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-lg bg-white/5 border border-white/15 text-white font-mono text-lg cursor-pointer hover:bg-white/10 flex items-center justify-center"
               >
                 −
               </button>
@@ -1726,7 +1987,7 @@ export default function BoardView({
                   hapticSelection();
                   setRequestedTurns((v) => Math.min(10, v + 1));
                 }}
-                className="w-9 h-9 rounded-lg bg-white/5 border border-white/15 text-white font-mono text-base cursor-pointer hover:bg-white/10"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-lg bg-white/5 border border-white/15 text-white font-mono text-lg cursor-pointer hover:bg-white/10 flex items-center justify-center"
               >
                 +
               </button>
@@ -1740,7 +2001,7 @@ export default function BoardView({
                 onSendTurnRequest?.(requestedTurns);
                 setIsTurnRequestOpen(false);
               }}
-              className="w-full py-2.5 px-3 bg-[#00ffaa] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffaa]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)]"
+              className="w-full min-h-[44px] py-2.5 px-3 bg-[#00ffaa] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffaa]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)] flex items-center justify-center"
             >
               Отправить запрос
             </button>
@@ -1750,7 +2011,7 @@ export default function BoardView({
 
       {/* --- ADMIN BONUS CONFIRMATION MODAL --- */}
       {bonusConfirmPlayer && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 pointer-events-auto">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] bg-black/85 pointer-events-auto overflow-y-auto">
           <div className="relative w-full max-w-md bg-[#151518] border-2 border-yellow-500/50 rounded-2xl p-6 shadow-[0_0_40px_rgba(234,179,8,0.25)] font-sans text-[#e0e0e6] space-y-4">
             <div className="flex items-center gap-2 border-b border-yellow-500/20 pb-3 text-yellow-400 font-syne font-bold text-sm tracking-wider uppercase">
               <Gift size={20} className="animate-bounce text-yellow-400" />
@@ -1772,12 +2033,12 @@ export default function BoardView({
               <div className="text-yellow-400 font-bold uppercase text-xs flex items-center gap-1.5">
                 <span>🎁</span>
                 <span>
-                  {bonusConfirmPlayer.activeBonus?.extra || bonusConfirmPlayer.activeBonus?.name}
+                  {cleanPrizeText(bonusConfirmPlayer.activeBonus?.extra || bonusConfirmPlayer.activeBonus?.name)}
                 </span>
               </div>
               {bonusConfirmPlayer.activeBonus?.description && (
                 <div className="text-white/60 text-[10px]">
-                  {bonusConfirmPlayer.activeBonus.description}
+                  {cleanPrizeText(bonusConfirmPlayer.activeBonus.description)}
                 </div>
               )}
             </div>
@@ -1800,7 +2061,7 @@ export default function BoardView({
                   );
                   setBonusConfirmPlayer(null);
                 }}
-                className="w-full btn py-2.5 px-3 bg-[#00ffaa] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffaa]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)]"
+                className="w-full btn min-h-[44px] py-2.5 px-3 bg-[#00ffaa] text-black font-mono font-bold text-xs rounded-lg hover:bg-[#00ffaa]/80 transition cursor-pointer uppercase tracking-wider shadow-[0_0_15px_rgba(0,255,170,0.3)] flex items-center justify-center text-center"
               >
                 ✅ Подтвердить использование бонуса и одобрить ход
               </button>
@@ -1812,7 +2073,7 @@ export default function BoardView({
                   onConsumeBonus?.(bonusConfirmPlayer.id);
                   setBonusConfirmPlayer(null);
                 }}
-                className="w-full btn py-2 px-3 bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 font-mono text-xs rounded-lg hover:bg-yellow-500/30 transition cursor-pointer uppercase tracking-wider"
+                className="w-full btn min-h-[44px] py-2 px-3 bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 font-mono text-xs rounded-lg hover:bg-yellow-500/30 transition cursor-pointer uppercase tracking-wider flex items-center justify-center text-center"
               >
                 🎁 Списать бонус (без одобрения хода)
               </button>
@@ -1820,7 +2081,7 @@ export default function BoardView({
               <button
                 type="button"
                 onClick={() => setBonusConfirmPlayer(null)}
-                className="w-full btn py-2 px-3 bg-white/5 border border-white/10 text-white/60 font-mono text-xs rounded-lg hover:bg-white/10 transition cursor-pointer uppercase tracking-wider"
+                className="w-full btn min-h-[44px] py-2 px-3 bg-white/5 border border-white/10 text-white/60 font-mono text-xs rounded-lg hover:bg-white/10 transition cursor-pointer uppercase tracking-wider flex items-center justify-center text-center"
               >
                 Отмена
               </button>
@@ -1836,6 +2097,8 @@ export default function BoardView({
           prizes={me?.prizeLog || []}
           onClose={() => setIsCabinetOpen(false)}
           onUpdateSkin={onUpdateSkin}
+          onUpdateHero={onUpdateHero}
+          initialTab={cabinetTab}
         />
       )}
     </div>
