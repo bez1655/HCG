@@ -239,6 +239,8 @@ export interface GameLog {
 }
 
 export interface GameState {
+  /** Version of board coordinates, independent of game progress. */
+  boardLayoutVersion?: number;
   /** Version of the persisted shape; see migrateState() in server.ts. */
   schemaVersion?: number;
   /**

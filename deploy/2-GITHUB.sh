@@ -118,7 +118,7 @@ else
 
   # На сервере рядом лежит рабочий .env — попасть в репозиторий он не должен
   # ни при каких обстоятельствах.
-  DANGER="$(echo "$STAGED" | grep -E '(^|/)\.env$|serviceAccount|credentials|\.pem$|\.key$|firebase-adminsdk' || true)"
+  DANGER="$(echo "$STAGED" | grep -E '(^|/)\.env$|serviceAccount|credentials|\.pem$|\.key$|firebase-adminsdk|\.keystore$|\.jks$' || true)"
   if [ -n "$DANGER" ]; then
     bad "в коммит попали файлы с секретами:"
     echo "$DANGER" | sed 's/^/        /'
@@ -161,27 +161,39 @@ else
   PUSH_TARGET="origin"
 fi
 
-if git push -u "$PUSH_TARGET" main 2>&1 | sed "s|${GITHUB_TOKEN:-НЕТТОКЕНА}|***|g"; then
-  # После отправки по URL с токеном возвращаем чистый адрес.
-  git remote set-url origin "$REPO_URL"
+PUSH_OUTPUT="$(git push -u "$PUSH_TARGET" main 2>&1)" || PUSH_EXIT=$?
+PUSH_EXIT=${PUSH_EXIT:-0}
+echo "$PUSH_OUTPUT" | sed "s|${GITHUB_TOKEN:-НЕТТОКЕНА}|***|g"
+git remote set-url origin "$REPO_URL"
 
+if [ "$PUSH_EXIT" -eq 0 ]; then
+  if echo "$PUSH_OUTPUT" | grep -q "Everything up-to-date"; then
+    echo
+    warn "Новых изменений для отправки нет (Everything up-to-date)."
+    echo "  Все локальные файлы уже синхронизированы с веткой main на GitHub."
+  else
+    echo
+    echo "${G}${B}╔════════════════════════════════════════════╗${N}"
+    echo "${G}${B}║  ГОТОВО. Код на GitHub.                    ║${N}"
+    echo "${G}${B}╚════════════════════════════════════════════╝${N}"
+  fi
   echo
-  echo "${G}${B}╔════════════════════════════════════════════╗${N}"
-  echo "${G}${B}║  ГОТОВО. Код на GitHub.                    ║${N}"
-  echo "${G}${B}╚════════════════════════════════════════════╝${N}"
+  echo "  Ветка отправки: main"
+  echo "  Если в веб-интерфейсе GitHub отображаются старые файлы, убедитесь,"
+  echo "  что ветка по умолчанию (Settings → Branches) установлена в 'main'."
   echo
   echo "  Включите защиту (один раз, в браузере):"
   echo "    Settings → Code security → Secret scanning: Enable"
   echo "                             → Push protection:  Enable"
   echo
 else
-  git remote set-url origin "$REPO_URL"
   echo
   bad "отправка не удалась"
   echo
   echo "  Частые причины:"
   echo "    • введён пароль вместо токена;"
   echo "    • репозиторий создан с README — удалите и создайте пустой;"
-  echo "    • у токена нет права Contents: Read and write."
+  echo "    • у токена нет права Contents: Read and write;"
+  echo "    • конфликт истории (удалите репозиторий на GitHub и создайте пустой)."
   exit 1
 fi

@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword, escapeHtml, generatePassword } from "./sr
 import * as firestore from "./src/persistence/firestore";
 import { atomicWrite, ensureDir } from "./src/persistence/files";
 import { choosePersistedState } from "./src/persistence/chooseState";
-import { resolveMove, isMilestone, generateDropBoxOptions, isDropBoxCell, startCellForMove } from "./src/game/rules";
+import { resolveMove, isMilestone, isDropBoxCell, startCellForMove } from "./src/game/rules";
 import {
   ensurePlayerRpg,
   beginEncounter,
@@ -20,6 +20,8 @@ import {
 } from "./src/game/encounters";
 import { syncPurchaseLoyalty, getLoyaltyDiscountPercent } from "./src/game/loyalty";
 import { keepBetterPrize, isBlockingShopPrize } from "./src/game/prizes";
+import { generateDropBoxOptions, issueDropCoupon } from "./src/game/dropBoxes.server";
+import { playerForViewer, visiblePlayerId } from "./src/game/publicPlayer.server";
 import { cryptoDice } from "./src/game/rpgRng";
 import { getSkinBySrc } from "./src/game/skins";
 import { pickAlias, publicName, isHorrorAlias, takenHorrorNames } from "./src/game/aliases";
@@ -332,7 +334,9 @@ function maskAdminIdentityInLog(message: string): string {
 }
 
 function logsForPlayers(logs: GameLog[]): GameLog[] {
-  return logs.map((l) => ({ ...l, message: maskAdminIdentityInLog(l.message) }));
+  // Prize logs and administrative operations remain in the admin journal.
+  return logs.filter((l) => !/^(bonus_|win_|drop_|rpg_)/.test(l.id) && !/приз|бонус|купон|HAP-|кристалл|скидк/i.test(l.message) && l.type !== "admin")
+    .map((l) => ({ ...l, message: maskAdminIdentityInLog(l.message).replace(/@[A-Za-z0-9_]{3,32}/g, "игрок") }));
 }
 
 
@@ -350,17 +354,6 @@ function findMentionedPlayers(text: string): Player[] {
  * Настоящий хендл заменён псевдонимом, телеграм-поля вырезаны. Всё, что
  * уходит клиенту без роли администратора, проходит через это.
  */
-function maskPlayer(p: Player): Player {
-  const masked: Player = { ...p, name: publicName(p) };
-  delete masked.telegramId;
-  delete masked.telegramUsername;
-  delete masked.previousHandles;
-  delete masked.previousAlias;
-  delete masked.pendingHorrorAlias;
-  delete masked.prizeLog;
-  delete masked.lastTurnReminderAt;
-  return masked;
-}
 
 
 function reserveHorrorAliases(): void {
@@ -421,11 +414,9 @@ function pushPrize(player: Player, bonus: NonNullable<Player["activeBonus"]>): v
 
 function markPrizeRedeemed(player: Player, label: string): void {
   if (!player.prizeLog) return;
-  const open = [...player.prizeLog].reverse().find((r) => {
-    if (r.redeemed) return false;
-    if (!label) return true;
-    return r.extra === label || r.name === label;
-  }) || [...player.prizeLog].reverse().find((r) => !r.redeemed);
+  const active = player.activeBonus;
+  const open = [...player.prizeLog].reverse().find((r) => !r.redeemed && r.at === active?.receivedAt && r.name === active?.name && r.cellId === active?.cellId)
+    || [...player.prizeLog].reverse().find((r) => !r.redeemed && !r.extra?.startsWith("HAP-") && (r.extra === label || r.name === label));
   if (open) {
     open.redeemed = true;
     open.redeemedAt = Date.now();
@@ -434,9 +425,16 @@ function markPrizeRedeemed(player: Player, label: string): void {
 }
 
 function applyShopPrize(player: Player, incoming: NonNullable<Player["activeBonus"]>) {
-  pushPrize(player, incoming);
   const previous = player.activeBonus ?? null;
   const { active, replaced } = keepBetterPrize(previous, incoming);
+  if (!previous || replaced) {
+    if (previous && player.prizeLog) {
+      // A displaced prize was not issued at the shop. Remove its pending record.
+      const idx = player.prizeLog.findIndex((r) => !r.redeemed && r.at === previous.receivedAt && r.name === previous.name && r.cellId === previous.cellId);
+      if (idx >= 0) player.prizeLog.splice(idx, 1);
+    }
+    pushPrize(player, incoming);
+  }
   player.activeBonus = active;
   return { previous, active, tookIncoming: !previous || replaced };
 }
@@ -456,10 +454,10 @@ function consumePlayerBonus(player: Player): string | null {
  * Имя отправителя в сообщении сохранено на момент отправки, поэтому старые
  * записи могут содержать хендл. Подменяем на псевдоним по senderId.
  */
-function maskChatMessage(m: ChatMessage): ChatMessage {
-  if (!m.senderName?.startsWith("@")) return m;
+function maskChatMessage(m: ChatMessage, viewerId?: string): ChatMessage {
   const author = gameState.players.find((p) => p.id === m.senderId);
-  return { ...m, senderName: author ? publicName(author) : "Игрок" };
+  return { ...m, senderId: visiblePlayerId(m.senderId, viewerId)!, senderName: author ? publicName(author) : (m.isAdmin ? "Администратор" : "Игрок"),
+    replyTo: m.replyTo ? { ...m.replyTo, senderName: m.replyTo.senderName.replace(/@[A-Za-z0-9_]{3,32}/g, "Игрок") } : undefined };
 }
 
 /**
@@ -579,7 +577,7 @@ function hydrateTurnJournal(): void {
  * Bump together with bot/src/version.ts when shipping something that must be
  * verifiable on a live server.
  */
-const SERVER_BUILD = "2026-11-23.31";
+const SERVER_BUILD = "2026-11-24.1";
 
 // ---------------------------------------------------------------------------
 // Persisted-state schema version.
@@ -1089,7 +1087,15 @@ function approveTurn(
       (p.alias || "").toLowerCase() === needle
   );
   if (!player) return { ok: false, error: "Игрок не найден" };
-  if (Number(player.cell) >= 64) player.cell = 0;
+  if (Number(player.cell) >= 64) {
+    addLog({
+      id: "lap_unwrap_" + Date.now(),
+      message: `🔁 ${shownName(player)} снимается с Ядра (64) на старт нового круга.`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: "system",
+    });
+    player.cell = 0;
+  }
 
   /*
    * Защита от повторной выдачи по устаревшей кнопке.
@@ -1104,18 +1110,22 @@ function approveTurn(
    * актуальное состояние на экране и вправе выдать ход без всякой заявки.
    */
   if (requireRequest && !player.turnRequested) {
-    const left = turnsLeftFor(player);
-    return {
-      ok: false,
-      alreadyHandled: true,
-      error:
-        left > 0
-          ? `Запрос уже обработан: у игрока ${player.name} есть ${left} ${pluralizeTurns(left)}. ` +
-            `Повторно выдавать не нужно.`
-          : `Запрос уже обработан ранее. Чтобы выдать ход заново, воспользуйтесь ` +
-            `админкой или командой /turns.`,
-      player,
-    };
+    // Если администратор подтверждает выданный ранее приз (кнопка approve_turn_bonus
+    // из команды /grant_turn), заявки у игрока нет, но бонус активен — разрешаем.
+    if (!confirmBonusUse || !player.activeBonus) {
+      const left = turnsLeftFor(player);
+      return {
+        ok: false,
+        alreadyHandled: true,
+        error:
+          left > 0
+            ? `Запрос уже обработан: у игрока ${player.name} есть ${left} ${pluralizeTurns(left)}. ` +
+              `Повторно выдавать не нужно.`
+            : `Запрос уже обработан ранее. Чтобы выдать ход заново, воспользуйтесь ` +
+              `админкой или командой /turns.`,
+        player,
+      };
+    }
   }
 
   if (player.activeBonus && confirmBonusUse) {
@@ -1408,6 +1418,7 @@ const rollLocks = new Set<string>();
 
 let gameState: GameState = {
   schemaVersion: SCHEMA_VERSION,
+  boardLayoutVersion: 2,
   players: [],
   cells: generateDefaultCells(),
   currentPlayerId: null,
@@ -1577,6 +1588,12 @@ async function start() {
     });
   }
 
+  // Old coordinates were calibrated to painted artwork with inconsistent cells.
+  // Reset geometry once, preserving player cell IDs, turns and prizes.
+  if (picked.state?.boardLayoutVersion !== 2) {
+    cellCalibrationMap = Object.fromEntries(generateDefaultCells().map((c) => [c.id, { x: c.x, y: c.y }]));
+  }
+  gameState.boardLayoutVersion = 2;
   // Populate cellCalibrationMap from loaded cells if not already set
   if (gameState && gameState.cells) {
     gameState.cells.forEach((c) => {
@@ -1753,6 +1770,7 @@ async function start() {
   function metaSlice() {
     return {
       schemaVersion: gameState.schemaVersion,
+      boardLayoutVersion: gameState.boardLayoutVersion,
       revision: gameState.revision,
       updatedAt: gameState.updatedAt,
       currentPlayerId: gameState.currentPlayerId,
@@ -1796,18 +1814,24 @@ async function start() {
     const slices = [...pendingSlices];
     pendingSlices = new Set();
 
-    const build = (forAdmin: boolean) => {
+    const build = (forAdmin: boolean, viewerId?: string) => {
       const patch: Record<string, unknown> = {};
       for (const slice of slices) {
-        if (slice === "meta") Object.assign(patch, metaSlice());
+        if (slice === "meta") {
+          Object.assign(patch, metaSlice());
+          if (!forAdmin) {
+            patch.currentPlayerId = visiblePlayerId(gameState.currentPlayerId, viewerId);
+            patch.turnRequestUserId = visiblePlayerId(gameState.turnRequestUserId, viewerId);
+          }
+        }
         else if (slice === "players") {
           patch.players = forAdmin
             ? gameState.players.map((p) => ({ ...p }))
-            : gameState.players.map(maskPlayer);
+            : gameState.players.map((p) => playerForViewer(p, viewerId));
         } else if (slice === "chatMessages") {
           patch.chatMessages = forAdmin
             ? gameState.chatMessages
-            : gameState.chatMessages.map(maskChatMessage);
+            : gameState.chatMessages.map((m) => maskChatMessage(m, viewerId));
         } else if (slice === "logs") {
           patch.logs = forAdmin ? gameState.logs : logsForPlayers(gameState.logs);
         } else patch[slice] = (gameState as any)[slice];
@@ -1815,11 +1839,10 @@ async function start() {
       return patch;
     };
 
-    const forPlayers = build(false);
     const forAdmins = build(true);
 
     for (const sock of io.sockets.sockets.values()) {
-      sock.emit("state:patch", sock.data?.role === "admin" ? forAdmins : forPlayers);
+      sock.emit("state:patch", sock.data?.role === "admin" ? forAdmins : build(false, sock.data?.playerId));
     }
   }
 
@@ -1982,36 +2005,23 @@ async function start() {
   }
 
   /** Strip sensitive fields before sending state to unauthenticated callers. */
-  function publicGameState(state: GameState) {
+  function publicGameState(state: GameState, viewerId?: string) {
     return {
       ...state,
-      players: state.players.map((p) => ({
-        id: p.id,
-        // Псевдоним, а не Telegram-хендл: этот ответ открыт без авторизации.
-        name: publicName(p),
-        alias: p.alias,
-        role: p.role,
-        cell: p.cell,
-        color: p.color,
-        isOnline: p.isOnline,
-        lastRoll: p.lastRoll,
-        skipNextTurn: p.skipNextTurn,
-        turnRequested: p.turnRequested,
-        turnsRequested: p.turnsRequested,
-        turnApprovedUntil: p.turnApprovedUntil,
-        turnsApproved: p.turnsApproved,
-        lastSeenAt: p.lastSeenAt,
-        avatar: p.avatar,
-        chipImage: p.chipImage,
-        // telegramId / telegramUsername intentionally omitted (personal data)
-      })),
+      players: state.players.map((p) => playerForViewer(p, viewerId)),
+      currentPlayerId: visiblePlayerId(state.currentPlayerId, viewerId),
+      turnRequestUserId: visiblePlayerId(state.turnRequestUserId, viewerId),
+      chatMessages: state.chatMessages.map((m) => maskChatMessage(m, viewerId)),
       logs: logsForPlayers(state.logs || []),
     };
   }
 
   // API endpoints
   app.get("/api/state", (req, res) => {
-    res.json(publicGameState(gameState));
+    const token = typeof req.headers.authorization === "string" ? req.headers.authorization.replace(/^Bearer\s+/i, "") : "";
+    const session = token ? verifySessionToken(token) : null;
+    res.setHeader("Cache-Control", "no-store");
+    res.json(session && isAdminHttpRequest(req) ? gameState : publicGameState(gameState, session?.sub));
   });
 
   app.post(
@@ -3282,16 +3292,7 @@ async function start() {
         "state:update",
         isAdmin
           ? gameState
-          : {
-              ...gameState,
-              players: gameState.players.map((p) => {
-                const m = maskPlayer(p);
-                if (p.id === authPlayerId) m.prizeLog = p.prizeLog;
-                return m;
-              }),
-              chatMessages: gameState.chatMessages.map(maskChatMessage),
-              logs: logsForPlayers(gameState.logs),
-            }
+          : publicGameState(gameState, authPlayerId)
       );
     };
     emitFullState();
@@ -3458,6 +3459,10 @@ async function start() {
         return;
       }
 
+      if (player.pendingDropBox || (player.pendingEncounter && !player.pendingEncounter.resolved)) {
+        socket.emit("error", "Сначала завершите текущее событие.");
+        return;
+      }
       const isAdminOrTest = player.role === "admin";
       /*
        * An approval is valid while BOTH hold: the window has not expired and
@@ -3522,7 +3527,7 @@ async function start() {
         addLog({
           id: "skip_" + Date.now(),
           message:
-            `⏳ Игрок ${player.name} пропустил ход из-за системного сбоя!` +
+            `⏳ Игрок ${shownName(player)} пропустил ход из-за системного сбоя!` +
             (left > 0 ? ` Осталось ${left} ${pluralizeTurns(left)}.` : ""),
           timestamp: new Date().toLocaleTimeString(),
           type: "system",
@@ -3675,7 +3680,7 @@ async function start() {
               timestamp: new Date().toLocaleTimeString(),
               type: "system",
             });
-            io.emit("toast:achievement", {
+            socket.emit("toast:achievement", {
               title: "FEVER MODE",
               message: `🔥 ${shownName(player)} активировал режим FEVER (3 победы подряд)!`,
               icon: "🔥",
@@ -3689,12 +3694,12 @@ async function start() {
       if (outcome.isDropBox) {
         const options = generateDropBoxOptions();
         player.pendingDropBox = {
-          cellId: outcome.finalCell,
+          cellId: isDropBoxCell(outcome.landedCell) ? outcome.landedCell : outcome.finalCell,
           options,
         };
         socket.emit("dropbox:available", {
-          cellId: outcome.finalCell,
-          options,
+          cellId: player.pendingDropBox.cellId,
+          options: [],
         });
       } else {
         attachRpgAndMaybeEncounter(socket, player, player.cell);
@@ -3736,7 +3741,7 @@ async function start() {
 
       // Trigger milestone toasts
       if (isMilestone(player.cell)) {
-        io.emit("toast:achievement", {
+        socket.emit("toast:achievement", {
           title: "СИСТЕМНЫЙ УЗЕЛ",
           message: `${shownName(player)} достиг сектора ${player.cell}!`,
           icon: "⭐",
@@ -3775,7 +3780,8 @@ async function start() {
           cellId: 64,
           receivedAt: Date.now(),
         });
-        player.cell = 0;
+        // Фишка остаётся на клетке 64 (Ядро Сети) до следующего хода или одобрения,
+        // после чего снимается на клетку 0 с записью lap_unwrap.
 
         addLog({
           id: "win_" + Date.now(),
@@ -3784,7 +3790,7 @@ async function start() {
           type: "system",
         });
 
-        io.emit("event:trigger", {
+        socket.emit("event:trigger", {
           title: "ЯДРО СЕТИ",
           description: `${shownName(player)} прошёл поле (круг ${player.lapsCompleted}). Главный приз в кабинете. Новый круг: фишка на клетку 0, щиты и кубики остаются.`,
           playerName: shownName(player),
@@ -3792,7 +3798,7 @@ async function start() {
           playerId: player.id,
         });
 
-        io.emit("toast:achievement", {
+        socket.emit("toast:achievement", {
           title: "ПОЛНЫЙ ЦИКЛ",
           message: `${shownName(player)} завершил круг!`,
           icon: "🏆",
@@ -3823,7 +3829,7 @@ async function start() {
         cell.type !== CellType.START &&
         cell.type !== CellType.FINISH
       ) {
-        io.emit("event:trigger", {
+        socket.emit("event:trigger", {
           title: cell.name,
           description: bonusText,
           playerName: shownName(player),
@@ -3831,7 +3837,7 @@ async function start() {
           playerId: player.id,
         });
 
-        io.emit("toast:achievement", {
+        socket.emit("toast:achievement", {
           title: "ОБНАРУЖЕН АРТЕФАКТ",
           message: `${shownName(player)} нашел ${cell.name}!`,
           icon: "⚡",
@@ -3839,15 +3845,8 @@ async function start() {
         });
 
         if (cell.type === CellType.FLASK || cell.type === CellType.BITCOIN) {
-          const bonusName = cell.extra || cell.name;
-          const incoming = {
-            name: cell.name,
-            extra: cell.extra || "",
-            description: cell.description,
-            value: cell.value,
-            cellId: cell.id,
-            receivedAt: Date.now(),
-          };
+          const incoming = outcome.awardedBonus!;
+          const bonusName = incoming.extra || incoming.name;
           const applied = applyShopPrize(player, incoming);
           const hadOldBonus = !!applied.previous;
 
@@ -3867,7 +3866,7 @@ async function start() {
 
           addLog({
             id: "bonus_grant_" + Date.now(),
-            message: `🎁 Игрок ${shownName(player)} получил призовой бонус: "${bonusName}".${hadOldBonus ? " Предыдущий неиспользованный бонус заменен (не суммируются)." : ""} Требуется подтверждение админа об использовании в реальной жизни перед следующим броском.`,
+            message: `🎁 Игрок ${shownName(player)} получил призовой бонус: "${bonusName}".${hadOldBonus ? " В пачке сохраняется только самый ценный приз." : ""} Новая пачка доступна после выдачи и списания приза.`,
             timestamp: new Date().toLocaleTimeString(),
             type: "system",
           });
@@ -3994,45 +3993,20 @@ async function start() {
       const player = gameState.players.find((p) => p.id === authPlayerId);
       if (!player || !player.pendingDropBox) return;
 
-      const boxIndex = typeof payload?.boxIndex === "number" ? Math.floor(payload.boxIndex) : 0;
-      const options = player.pendingDropBox.options;
-      const chosen = options[boxIndex] || options[0];
-      player.pendingDropBox = null;
-
-      let resultText = "";
-      if (chosen.type === "jump") {
-        const jump = chosen.value || 2;
-        player.cell = Math.min(64, player.cell + jump);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Ускорение на +${jump} кл.!`;
-      } else if (chosen.type === "promo") {
-        const prizeRecord: PrizeRecord = {
-          at: Date.now(),
-          name: chosen.title,
-          extra: chosen.promoCode,
-          cellId: player.cell,
-          redeemed: false,
-        };
-        player.prizeLog = player.prizeLog || [];
-        player.prizeLog.push(prizeRecord);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: ${chosen.title} (${chosen.promoCode})!`;
-        const couponAdmin =
-          `🎟️ <b>Купон из кейса</b>\n` +
-          `Игрок: <b>${escapeHtml(player.name)}</b>` +
-          (player.alias ? ` (${escapeHtml(player.alias)})` : "") +
-          `\nКлетка: ${player.cell}` +
-          `\nСкидка: ${escapeHtml(chosen.title)}` +
-          `\nКод: <code>${escapeHtml(chosen.promoCode || "")}</code>` +
-          `\nВыдать в магазине, затем отметить в кабинете.`;
-        void sendTelegramMessageToAdmin(couponAdmin);
-      } else if (chosen.type === "item" && chosen.item) {
-        player.inventory = player.inventory || [];
-        player.inventory.push(chosen.item);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Получен предмет [${chosen.title}]!`;
-      } else if (chosen.type === "penalty") {
-        const pen = chosen.value || -1;
-        player.cell = Math.max(0, player.cell + pen);
-        resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: Ловушка системы (${pen} кл.)!`;
+      const boxIndex = payload?.boxIndex;
+      if (typeof boxIndex !== "number" || !Number.isInteger(boxIndex) || boxIndex < 0 || boxIndex > 2) {
+        socket.emit("error", "Выберите один из трёх кейсов.");
+        return;
       }
+      const options = player.pendingDropBox.options.length === 3 && player.pendingDropBox.options.every((o) => o.type === "promo")
+        ? player.pendingDropBox.options : generateDropBoxOptions();
+      const chosen = issueDropCoupon(options[boxIndex]);
+      const dropCell = player.pendingDropBox.cellId;
+      player.pendingDropBox = null;
+      player.prizeLog = player.prizeLog || [];
+      player.prizeLog.push({ at: Date.now(), name: chosen.title, extra: chosen.promoCode, cellId: dropCell, redeemed: false });
+      const resultText = `📦 [Кибер-дроп] ${shownName(player)} открыл кейс: ${chosen.title} (${chosen.promoCode})!`;
+      void sendTelegramMessageToAdmin(`🎟️ Купон из кейса: ${escapeHtml(player.name)} · ${escapeHtml(chosen.title)} · ${escapeHtml(chosen.promoCode || "")}`);
 
       addLog({
         id: "drop_" + Date.now(),
@@ -4043,7 +4017,7 @@ async function start() {
 
       socket.emit("dropbox:result", {
         chosen,
-        allOptions: options,
+        allOptions: options.map((o, i) => i === boxIndex ? chosen : { ...o, promoCode: undefined }),
       });
 
       attachRpgAndMaybeEncounter(socket, player, player.cell);
@@ -4060,7 +4034,10 @@ async function start() {
       try {
       const player = gameState.players.find((p) => p.id === authPlayerId);
       if (!player || !player.pendingEncounter || player.pendingEncounter.resolved) return;
-      const choiceId = typeof payload?.choiceId === "string" ? payload.choiceId : "fight";
+      const choiceId = payload?.choiceId;
+      const pending = player.pendingEncounter;
+      const valid = pending.type === "boss" ? choiceId === "fight" : pending.type === "quest" ? pending.quest?.choices.some((c) => c.id === choiceId) : typeof choiceId === "string" && ["intel", "stamp", "pardon", "leave"].includes(choiceId);
+      if (!valid || typeof choiceId !== "string") { socket.emit("error", "Недопустимый выбор события."); return; }
       const session = resolveEncounterChoice(player, choiceId, cryptoDice);
       player.pendingEncounter = session;
       socket.emit("encounter:resolved", session);

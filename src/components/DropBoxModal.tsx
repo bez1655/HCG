@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Package, Gift, Zap, Shield, AlertTriangle } from "lucide-react";
 import { DropBoxOption } from "../types";
 import { playSound } from "../utils/sounds";
@@ -23,6 +23,12 @@ export default function DropBoxModal({
   onClose,
 }: DropBoxModalProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedIndex === null || result) return;
+    const timer = window.setTimeout(() => setSelectedIndex(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [selectedIndex, result]);
 
   const handleSelectBox = (index: number) => {
     if (selectedIndex !== null || result !== null) return;
@@ -60,7 +66,7 @@ export default function DropBoxModal({
               <button
                 key={idx}
                 type="button"
-                disabled={selectedIndex !== null}
+                disabled={selectedIndex !== null || result !== null}
                 onClick={() => handleSelectBox(idx)}
                 className={`min-h-[7.5rem] rounded-xl border p-2 flex flex-col items-center justify-center gap-1 ${
                   isPicked

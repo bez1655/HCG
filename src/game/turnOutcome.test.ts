@@ -118,7 +118,7 @@ describe("buildTurnOutcome — призовые клетки", () => {
       replacedBonus: prev,
       turnsRemaining: 0,
     });
-    expect(m.body).toContain("заменён");
+    expect(m.body).toContain("самый ценный приз");
   });
 });
 

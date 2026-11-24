@@ -61,7 +61,7 @@ function connect(token?: string): Promise<{ ok: boolean; socket?: Socket; error?
 }
 
 async function getState(): Promise<any> {
-  return fetch(`${URL}/api/state`).then((r) => r.json());
+  return fetch(`${URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
 }
 
 /**
@@ -726,7 +726,11 @@ describe("registration flow", () => {
      * псевдонимы. Находим игрока по id, взятому из админского вида.
      */
     const real = (await getAdminState()).players.find((x: any) => x.name === HANDLE);
-    const p = (await getState()).players.find((x: any) => x.id === real.id);
+    const publicState = await fetch(`${URL}/api/state`).then((r) => r.json());
+    const p = publicState.players.find((x: any) => x.alias === real.alias);
+    expect(p.id).not.toBe(real.id);
+    expect(p.activeBonus).toBeUndefined();
+    expect(p.prizeLog).toBeUndefined();
     expect(p.telegramId).toBeUndefined();
     expect(p.telegramUsername).toBeUndefined();
     // И сам хендл наружу не ушёл.
@@ -1343,7 +1347,7 @@ describe("roll reports reach the administrator", () => {
    */
   /** Текущее состояние игрока на этом сервере. */
   const playerIn2 = async (id: string) =>
-    (await fetch(`${RP_URL}/api/state`).then((r) => r.json())).players.find(
+    (await fetch(`${RP_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json())).players.find(
       (p: any) => p.id === id
     );
 
@@ -1616,7 +1620,7 @@ describe("approved turns never expire", () => {
   let exServer: ChildProcess;
   let exDir: string;
 
-  const stateOf = async () => fetch(`${EX_URL}/api/state`).then((r) => r.json());
+  const stateOf = async () => fetch(`${EX_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
   const playerOf = async (id: string) => (await stateOf()).players.find((p: any) => p.id === id);
 
   beforeAll(async () => {
@@ -1906,7 +1910,7 @@ describe("last-seen stamp drives token visibility", () => {
 
   it("ships the timeout setting to clients", async () => {
     // Доска не сможет применить правило, если настройка до неё не доедет.
-    const state = await fetch(`${LS_URL}/api/state`).then((r) => r.json());
+    const state = await fetch(`${LS_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     expect(typeof state.hideTokensAfterHours).toBe("number");
   });
 
@@ -2654,7 +2658,7 @@ describe("player aliases hide real handles", () => {
      * уходил сырым, в обход фильтра, и игрок получал хендлы всех остальных
      * ещё до первого хода.
      */
-    const state = await publicState();
+    const state = await fetch(`${AL_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     const alice = state.players.find((p: any) => p.alias && p.role === "player");
 
     const { socket, snapshot } = await socketState(alice.id);
@@ -2683,7 +2687,7 @@ describe("player aliases hide real handles", () => {
      * запись о броске: первая версия теста смотрела пустой журнал и
      * пропускала возврат хендла в строку «выбросил N».
      */
-    const state = await publicState();
+    const state = await fetch(`${AL_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     const alice = state.players.find((p: any) => p.role === "player");
 
     await fetch(`${AL_URL}/api/admin/bot-approve-turn`, {
@@ -2719,7 +2723,7 @@ describe("player aliases hide real handles", () => {
   }, 25_000);
 
   it("uses the alias as the chat sender name", async () => {
-    const state = await publicState();
+    const state = await fetch(`${AL_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     const alice = state.players.find((p: any) => p.role === "player");
 
     const sock = io(AL_URL, {
@@ -2838,7 +2842,7 @@ describe("admin can reach one player directly", () => {
       });
     }
 
-    const state = await fetch(`${DM_URL}/api/state`).then((r) => r.json());
+    const state = await fetch(`${DM_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     alice = state.players.find((p: any) => p.id && p.alias && p.name === "@dm_alice");
     bob = state.players.find((p: any) => p.name === "@dm_bob");
     // Публичное состояние прячет хендлы, поэтому ищем через админский вид.
@@ -3038,7 +3042,7 @@ describe("players are never told about each other", () => {
     if (pvDir) fs.rmSync(pvDir, { recursive: true, force: true });
   });
 
-  const stateOf = async () => fetch(`${PV_URL}/api/state`).then((r) => r.json());
+  const stateOf = async () => fetch(`${PV_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
   // Поиск по настоящему хендлу возможен только в админском виде.
   const adminStateOf = async () =>
     fetch(`${PV_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
@@ -3247,7 +3251,7 @@ describe("approval cannot be granted twice", () => {
     if (apDir) fs.rmSync(apDir, { recursive: true, force: true });
   });
 
-  const stateOf = async () => fetch(`${AP_URL}/api/state`).then((r) => r.json());
+  const stateOf = async () => fetch(`${AP_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
   const adminStateOf = async () =>
     fetch(`${AP_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
   const playerOf = async (id: string) => (await stateOf()).players.find((p: any) => p.id === id);
@@ -3586,13 +3590,13 @@ describe("upgrade from a pre-batch state file", () => {
   });
 
   it("keeps a live approval worth exactly one roll", async () => {
-    const state = await fetch(`${UP_URL}/api/state`).then((r) => r.json());
+    const state = await fetch(`${UP_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     const p = state.players.find((x: any) => x.id === "p_legacy_1");
     expect(p.turnsApproved).toBe(1);
   });
 
   it("does not invent turns for a player who had none", async () => {
-    const state = await fetch(`${UP_URL}/api/state`).then((r) => r.json());
+    const state = await fetch(`${UP_URL}/api/admin/state`, { headers: internalHeaders }).then((r) => r.json());
     const p = state.players.find((x: any) => x.id === "p_legacy_2");
     expect(p.turnsApproved).toBe(0);
   });

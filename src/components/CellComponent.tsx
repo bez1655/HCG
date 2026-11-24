@@ -2,6 +2,10 @@ import React from "react";
 import { motion } from "motion/react";
 import { Cell, CellType, Player } from "../types";
 
+const boss = [16, 32, 48, 63];
+const contract = [6, 20, 36, 50];
+const fixer = [10, 26, 44, 58];
+
 interface CellComponentProps {
   cell: Cell;
   hasPlayersOnCell: Player[];
@@ -68,14 +72,14 @@ const CellComponent = React.memo(
     calibrationMode,
     isDropBox = false,
   }: CellComponentProps) => {
+    const badge = isDropBox ? "Д" : boss.includes(cell.id) ? "Б" : contract.includes(cell.id) ? "К" : fixer.includes(cell.id) ? "Ф" : "";
+    const value = cell.type === CellType.FINISH ? "13800" : cell.type === CellType.START ? "СТАРТ" : cell.type === CellType.FLASK || cell.type === CellType.BITCOIN ? String(cell.value) : cell.value > 0 ? `+${cell.value}` : cell.value < 0 ? String(cell.value) : cell.extra?.includes("ХОД") ? "+1Х" : "";
     return (
       <motion.div
         key={cell.id}
         className={`absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center group cell-component-container ${isDraggable ? "cursor-move" : "cursor-pointer"} ${calibrationMode ? "z-50" : "z-20"}`}
         style={{ left: `${cell.x}%`, top: `${cell.y}%` }}
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: cell.id * 0.01 }}
+        initial={false}
         onClick={onClick}
         drag={isDraggable ? true : false}
         dragMomentum={false}
@@ -104,34 +108,18 @@ const CellComponent = React.memo(
           </motion.div>
         ) : (
           <motion.div
-            className={`font-black transition-all duration-300 font-mono text-[10px] md:text-xs select-none ${getCellVisualClasses(
+            className={`relative min-w-[22px] min-h-[22px] px-0.5 rounded-md border border-cyan-400/70 bg-[#071322] flex flex-col items-center justify-center font-black font-mono text-[10px] leading-none select-none ${getCellVisualClasses(
               cell.type
             )} ${isSelected ? "scale-125 text-white drop-shadow-[0_0_12px_#FFFFFF]" : ""}`}
-            whileHover={{ scale: 1.25, filter: "brightness(1.3)" }}
-            animate={
-              hasPlayersOnCell.length > 0 && cell.type !== CellType.NORMAL
-                ? {
-                    scale: [1, 1.25, 1],
-                    rotate: [0, 5, -5, 0],
-                    filter: ["hue-rotate(0deg)", "hue-rotate(90deg)", "hue-rotate(0deg)"],
-                  }
-                : {}
-            }
-            transition={{ repeat: Infinity, duration: 1.5 }}
+
           >
-            {cell.id}
+            <span>{cell.id}{badge && <span className="ml-0.5 text-yellow-300">{badge}</span>}</span>
+            {value && <span className="text-[7px] leading-none mt-0.5 text-white">{value}</span>}
           </motion.div>
         )}
 
         {/* DropBox Crate Beacon Badge */}
-        {isDropBox && !calibrationMode && (
-          <div
-            className="absolute -top-3.5 -right-2 text-[11px] pointer-events-none select-none z-30"
-            title="Кибер-дроп"
-          >
-            📦
-          </div>
-        )}
+
 
         {/* Info Tooltip */}
         {(isSelected || (calibrationMode && cell.type !== CellType.NORMAL)) && (

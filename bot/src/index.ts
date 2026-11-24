@@ -1764,20 +1764,22 @@ async function handleTurnApproval(
   playerId: string,
   adminName: string,
   confirmBonusUse: boolean,
-  turns?: number
+  turns?: number,
+  requireRequest?: boolean
 ) {
   try {
     const res = await internalFetch("/api/admin/bot-approve-turn", {
       method: "POST",
       // requireRequest: это нажатие кнопки под конкретной заявкой. Если
       // решение уже приняли в другом месте, сервер откажет, и ход не
-      // выдастся повторно.
+      // выдастся повторно. При ручном подтверждении бонуса requireRequest
+      // отключается, чтобы администратор мог выдать ход без висящей заявки.
       body: JSON.stringify({
         playerId,
         admin: adminName,
         confirmBonusUse,
         turns,
-        requireRequest: true,
+        requireRequest: requireRequest ?? !confirmBonusUse,
       }),
     });
 

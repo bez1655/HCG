@@ -136,7 +136,7 @@ export function buildTurnOutcome(input: TurnOutcomeInput): TurnOutcomeMessage {
   parts.push(`Вы прошли ${steps} ${pluralizeCells(steps)}: с клетки ${fromCell} на ${landedCell}.`);
 
   // 2. Эффект клетки, если он сдвинул фишку.
-  if (finalCell !== landedCell) {
+  if (!finished && finalCell !== landedCell) {
     const diff = finalCell - landedCell;
     if (diff > 0) {
       parts.push(`Ускоритель отбросил вас вперёд на ${diff} ${pluralizeCells(diff)} — теперь клетка ${finalCell}.`);
@@ -148,11 +148,11 @@ export function buildTurnOutcome(input: TurnOutcomeInput): TurnOutcomeMessage {
 
   // 3. Приз или его отсутствие. «Приза нет» — такой же результат.
   if (finished) {
-    parts.push("Вы дошли до ЯДРА СИСТЕМЫ и забрали главный приз!");
+    parts.push("Вы дошли до ЯДРА СИСТЕМЫ и забрали главный приз! Фишка вернулась на старт нового круга.");
   } else if (awardedBonus) {
     parts.push(`Награда: ${awardedBonus.extra || awardedBonus.name}.`);
     if (replacedBonus) {
-      parts.push("Предыдущий неиспользованный приз заменён — призы не суммируются.");
+      parts.push("В пачке сохраняется только самый ценный приз — призы не суммируются.");
     }
   } else if (extraRoll) {
     parts.push("Клетка дала дополнительный бросок.");

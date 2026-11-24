@@ -44,10 +44,14 @@ hdr "1/8  Свободное место"
 # ---------------------------------------------------------------------------
 FREE_MB=$(df -m "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
 if [ -n "${FREE_MB:-}" ] && [ "$FREE_MB" -lt 4000 ]; then
-  warn "свободно ${FREE_MB} МБ — для сборки нужно около 4 ГБ"
-  printf "  Продолжить всё равно? [д/Н] "
-  read -r go
-  case "$go" in [дДyY]*) ;; *) die "остановлено пользователем" ;; esac
+  warn "свободно ${FREE_MB} МБ — для сборки желательно около 4 ГБ"
+  if [ -t 0 ]; then
+    printf "  Продолжить всё равно? [Д/н] "
+    read -r go
+    case "$go" in [nNнН]*) die "остановлено пользователем" ;; esac
+  else
+    warn "неинтерактивный режим: продолжаю сборку"
+  fi
 else
   ok "места достаточно (${FREE_MB:-?} МБ)"
 fi
@@ -129,11 +133,13 @@ else
   export PATH="$SDK/cmdline-tools/latest/bin:$PATH"
 
   yes 2>/dev/null | sdkmanager --licenses >/dev/null 2>&1 || true
-  # Capacitor 8 просит SDK 36. На сервере x86_64 это доступно без обходов —
-  # в отличие от Termux, где aapt2 не работает выше 34.
-  sdkmanager "platform-tools" "platforms;android-36" "build-tools;34.0.0" >/dev/null 2>&1 \
-    || sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" >/dev/null 2>&1 \
+  # Capacitor 8 требует SDK 36 и соответствующие build-tools (36.0.0 или 35.0.0).
+  # Установка устаревших build-tools 34.0.0 приводила к отказу Android Gradle Plugin.
+  sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "build-tools;35.0.0" >/dev/null 2>&1 \
+    || sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" >/dev/null 2>&1 \
+    || sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" >/dev/null 2>&1 \
     || warn "sdkmanager отработал с замечаниями — продолжаю"
+  yes 2>/dev/null | sdkmanager --licenses >/dev/null 2>&1 || true
 fi
 
 export ANDROID_HOME="$SDK"
@@ -175,7 +181,10 @@ fi
 
 case "$CURRENT" in
   https://*) ;;
-  *) die "адрес должен начинаться с https:// — Android блокирует незашифрованные соединения" ;;
+  http://*)
+    warn "адрес использует незашифрованный протокол http:// — для production рекомендуется https://"
+    ;;
+  *) die "адрес должен начинаться с https:// или http://" ;;
 esac
 
 echo "VITE_API_BASE_URL=$CURRENT" > .env

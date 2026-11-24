@@ -11,7 +11,7 @@
  * board it returns *what should happen*. The caller applies the result and
  * deals with persistence and notifications.
  */
-import { Cell, CellType, Player, ActiveBonus, DropBoxOption } from "../types";
+import { Cell, CellType, Player, ActiveBonus } from "../types";
 
 export const FINAL_CELL = 64;
 export const GRAND_PRIZE_VALUE = 13800;
@@ -140,13 +140,13 @@ export function resolveMove(
   }
 
   const finished = from < FINAL_CELL && finalCell >= FINAL_CELL;
-  const isDropBox = isDropBoxCell(finalCell);
+  const isDropBox = isDropBoxCell(landedCell) || isDropBoxCell(finalCell);
 
   let awardedBonus: ActiveBonus | null = null;
   if (finished) {
     awardedBonus = {
-      name: "ГЛАВНЫЙ ПРИЗ",
-      extra: "ФИНАЛ",
+      name: "МЕГА-КРИСТАЛЛ",
+      extra: "МЕГА-КРИСТАЛЛ",
       description: "Главный приз за прохождение полного круга",
       value: GRAND_PRIZE_VALUE,
       cellId: FINAL_CELL,
@@ -167,9 +167,10 @@ export function resolveMove(
   if (options?.feverActive) {
     extraRoll = true;
     feverReward = true;
-    if (awardedBonus) {
+    if (awardedBonus && cell?.type === CellType.BITCOIN && !finished) {
       if (typeof awardedBonus.value === "number") {
         awardedBonus.value *= 2;
+        awardedBonus.extra = `СКИДКА ${awardedBonus.value}`;
       }
       awardedBonus.description =
         (awardedBonus.description ? awardedBonus.description + " • " : "") +
@@ -193,76 +194,6 @@ export function resolveMove(
     magnetPulled,
     feverReward,
   };
-}
-
-/**
- * Generate 3 diverse cyber-box choices for a drop box cell.
- */
-function unitRandom(): number {
-  if (typeof crypto !== "undefined" && typeof crypto.randomInt === "function") {
-    return crypto.randomInt(0, 1000) / 1000;
-  }
-  return Math.random();
-}
-
-export function generateDropBoxOptions(): DropBoxOption[] {
-  const jumpSteps = unitRandom() < 0.5 ? 2 : 3;
-  const opt1: DropBoxOption = {
-    title: `Ускоритель +${jumpSteps}`,
-    description: `Рывок вперёд на +${jumpSteps} ${pluralizeCells(jumpSteps)}!`,
-    type: "jump",
-    value: jumpSteps,
-  };
-
-  // Option 2: Store Discount Voucher
-  const discount = unitRandom() < 0.5 ? 10 : 15;
-  const opt2: DropBoxOption = {
-    title: `Скидка ${discount}% в Hapstore`,
-    description: `Купон на скидку ${discount}% при покупке в магазине!`,
-    type: "promo",
-    promoCode: `HAP-${discount}-${1000 + (typeof crypto.randomInt === "function" ? crypto.randomInt(0, 9000) : Math.floor(Math.random() * 9000))}`,
-  };
-
-  // Option 3: Consumable Item or small glitch
-  const rollThird = unitRandom();
-  let opt3: DropBoxOption;
-  if (rollThird < 0.35) {
-    opt3 = {
-      title: "Щит «Файрвол»",
-      description: "Защитный девайс добавлен в ваш инвентарь!",
-      type: "item",
-      item: "shield",
-    };
-  } else if (rollThird < 0.65) {
-    opt3 = {
-      title: "Заряженный кубик",
-      description: "Чип гарантированного броска (5 или 6) добавлен в инвентарь!",
-      type: "item",
-      item: "loaded_dice",
-    };
-  } else if (rollThird < 0.88) {
-    opt3 = {
-      title: "Неоновый магнит",
-      description: "Девайс притяжения к призовым клеткам добавлен в инвентарь!",
-      type: "item",
-      item: "magnet",
-    };
-  } else {
-    opt3 = {
-      title: "Глитч-вирус",
-      description: "Небольшой сбой системы: откат назад на -1 клетку.",
-      type: "penalty",
-      value: -1,
-    };
-  }
-
-  const options = [opt1, opt2, opt3];
-  // Fisher-Yates shuffle
-  for (let i = options.length - 1; i > 0; i--) {
-    const j = Math.floor(unitRandom() * (i + 1));
-    [options[i], options[j]] = [options[j], options[i]];
-  }
-  return options;
 }
 
 /**

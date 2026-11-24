@@ -72,10 +72,12 @@ try {
 // Android blocks cleartext HTTP by default, and the game carries session
 // tokens. Refusing http:// here is friendlier than an APK that silently fails
 // on every request.
-if (parsed.protocol !== "https:") {
-  console.error(`\n❌ Адрес должен начинаться с https:// — получено "${parsed.protocol}//"`);
-  console.error("   Android блокирует незашифрованные соединения.\n");
+if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+  console.error(`\n❌ Адрес должен начинаться с https:// или http:// — получено "${parsed.protocol}//"\n`);
   process.exit(1);
+}
+if (parsed.protocol === "http:") {
+  console.warn(`\n⚠️ Предупреждение: адрес использует http:// — для боевого сервера рекомендуется https://\n`);
 }
 
 console.log(`\n▸ Сервер игры: ${apiBase}`);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Cell, CellType, Player } from "../types";
+import { generateDropBoxOptions, issueDropCoupon } from "./dropBoxes.server";
 import {
   resolveMove,
   canRoll,
@@ -9,7 +10,6 @@ import {
   isMilestone,
   FINAL_CELL,
   isDropBoxCell,
-  generateDropBoxOptions,
   DROP_BOX_CELL_IDS,
 } from "./rules";
 
@@ -92,6 +92,7 @@ describe("resolveMove — penalties", () => {
     const r = resolveMove(player(10), 2, board);
     expect(r.landedCell).toBe(12);
     expect(r.finalCell).toBe(9);
+    expect(r.isDropBox).toBe(true);
   });
 
   it("handles the heavy -10 snake", () => {
@@ -300,7 +301,9 @@ describe("Cyber-Drop & Drop Boxes", () => {
     expect(options).toHaveLength(3);
     for (const opt of options) {
       expect(opt.title).toBeTruthy();
-      expect(opt.type).toMatch(/^(jump|promo|item|penalty)$/);
+      expect(opt.type).toBe("promo");
+      expect(opt.promoCode).toBeUndefined();
+      expect(issueDropCoupon(opt).promoCode).toMatch(/^HAP-/);
       expect(opt.description).toBeTruthy();
     }
   });

@@ -106,3 +106,8 @@ pnpm-lock.yaml
 *.tgz
 *.rar
 *.7z
+
+# --- Ключи подписи приложений ---
+*.keystore
+*.jks
+keystore/

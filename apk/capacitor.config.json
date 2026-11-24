@@ -3,10 +3,11 @@
   "appName": "Hapstore",
   "webDir": "www",
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": true
   },
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "cleartext": true
   },
   "plugins": {
     "StatusBar": {

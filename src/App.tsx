@@ -434,7 +434,7 @@ export default function App() {
       setGameState((current) => {
         if (current) return current;
         console.warn("[Session] No socket state after 8s; HTTP fallback.");
-        void apiFetch("/api/state")
+        void apiFetch("/api/state", { headers: { Authorization: `Bearer ${token}` } })
           .then((r) => r.json())
           .then((data) => applyState(data as GameState))
           .catch(() => undefined);
@@ -574,6 +574,9 @@ export default function App() {
     const p =
       gameState.players.find((x) => x.id === userId) ||
       gameState.players.find((x) => x.name === userId);
+    if (diceSpinRef.current) return;
+    if (p?.pendingDropBox) setDropBoxSession((cur) => cur || p.pendingDropBox || null);
+    else if (p && !dropBoxResult) setDropBoxSession(null);
     if (p?.pendingEncounter && !p.pendingEncounter.resolved) {
       setEncounter((cur) => cur || p.pendingEncounter || null);
     }

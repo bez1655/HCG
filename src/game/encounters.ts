@@ -9,7 +9,6 @@ import type {
   Player,
   CharacterClass,
   CharacterStats,
-  LoyaltyRank,
   EncounterType,
   BossEncounter,
   QuestEncounter,
@@ -59,12 +58,6 @@ export function getEncounterType(cellId: number): EncounterType | null {
   if (isQuestCell(cellId)) return "quest";
   if (isMerchantCell(cellId)) return "merchant";
   return null;
-}
-
-export function loyaltyRankFrom(credits: number, laps: number): LoyaltyRank {
-  void credits;
-  void laps;
-  return "intern";
 }
 
 function classFromId(id: string): CharacterClass {
@@ -226,7 +219,7 @@ export function createMerchantEncounter(cellId: number, player?: Player): Mercha
       id: "stamp",
       text: player?.pendingCheckBonus
         ? "Хром-печать уже горит"
-        : "Хром-печать: +1 к следующей проверке",
+        : "Хром-печать: +1 к следующей проверке (сгорает при любом результате)",
     },
   ];
   if (player?.skipNextTurn) {

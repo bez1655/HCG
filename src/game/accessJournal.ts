@@ -134,6 +134,32 @@ export function cleanIp(raw: string): string {
 }
 
 /**
+ * Detect common Cloudflare Edge IP ranges to prevent false-positive multi-account clustering.
+ */
+export function isCloudflareEdgeIp(ip: string): boolean {
+  if (!ip || ip === "unknown") return false;
+  if (ip.startsWith("162.158.") || ip.startsWith("162.159.")) return true;
+  if (
+    ip.startsWith("108.162.") ||
+    ip.startsWith("141.101.") ||
+    ip.startsWith("188.114.") ||
+    ip.startsWith("190.93.") ||
+    ip.startsWith("197.234.") ||
+    ip.startsWith("198.41.")
+  ) {
+    return true;
+  }
+  const parts = ip.split(".");
+  if (parts.length === 4) {
+    const first = Number(parts[0]);
+    const second = Number(parts[1]);
+    if (first === 104 && second >= 16 && second <= 27) return true;
+    if (first === 172 && second >= 64 && second <= 71) return true;
+  }
+  return false;
+}
+
+/**
  * Extract client IP from Express request, checking reverse-proxy headers first.
  */
 export function extractClientIp(req: {
@@ -141,13 +167,33 @@ export function extractClientIp(req: {
   ip?: string;
   socket?: { remoteAddress?: string };
 }): string {
-  // 1. X-Forwarded-For (can be comma-separated list: "client, proxy1, proxy2")
+  // 1. Cloudflare Connecting IP & True-Client-IP (authoritative client IP when behind Cloudflare proxy)
+  const cfConnectingIp = req.headers["cf-connecting-ip"] || req.headers["true-client-ip"];
+  if (typeof cfConnectingIp === "string" && cfConnectingIp.trim()) {
+    const candidate = cleanIp(cfConnectingIp);
+    if (candidate && candidate !== "unknown" && !isCloudflareEdgeIp(candidate)) return candidate;
+  }
+
+  // 2. X-Real-IP (standard Nginx / Caddy header for client IP)
+  const xRealIp = req.headers["x-real-ip"];
+  if (typeof xRealIp === "string" && xRealIp.trim()) {
+    const candidate = cleanIp(xRealIp);
+    if (candidate && candidate !== "unknown" && !isCloudflareEdgeIp(candidate)) return candidate;
+  }
+
+  // 3. X-Forwarded-For (can be comma-separated list: "client, proxy1, proxy2")
+  // Filter out localhost and intermediate Cloudflare proxy nodes so the real visitor IP is returned.
   const xForwardedFor = req.headers["x-forwarded-for"];
   if (typeof xForwardedFor === "string" && xForwardedFor.trim()) {
     const parts = xForwardedFor.split(",");
     for (const part of parts) {
       const candidate = cleanIp(part);
-      if (candidate && candidate !== "unknown" && candidate !== "127.0.0.1") {
+      if (
+        candidate &&
+        candidate !== "unknown" &&
+        candidate !== "127.0.0.1" &&
+        !isCloudflareEdgeIp(candidate)
+      ) {
         return candidate;
       }
     }
@@ -156,20 +202,6 @@ export function extractClientIp(req: {
   } else if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
     const first = cleanIp(String(xForwardedFor[0]));
     if (first && first !== "unknown") return first;
-  }
-
-  // 2. X-Real-IP (standard Nginx / Caddy header)
-  const xRealIp = req.headers["x-real-ip"];
-  if (typeof xRealIp === "string" && xRealIp.trim()) {
-    const candidate = cleanIp(xRealIp);
-    if (candidate && candidate !== "unknown") return candidate;
-  }
-
-  // 3. Cloudflare Connecting IP
-  const cfConnectingIp = req.headers["cf-connecting-ip"];
-  if (typeof cfConnectingIp === "string" && cfConnectingIp.trim()) {
-    const candidate = cleanIp(cfConnectingIp);
-    if (candidate && candidate !== "unknown") return candidate;
   }
 
   // 4. Express req.ip or socket remote address

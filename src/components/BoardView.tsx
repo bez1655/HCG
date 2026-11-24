@@ -1125,7 +1125,7 @@ export default function BoardView({
                     {/* Level & XP */}
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className="text-[8px] font-mono font-black text-white">
-                        Ур. {(me as any)?.characterLevel || 7}
+                        Ур. {me?.characterLevel ?? 1}
                       </span>
                       <div className="w-10 h-1.5 bg-black/60 border border-[#00f0ff]/40 rounded-full overflow-hidden">
                         <div
@@ -1134,10 +1134,10 @@ export default function BoardView({
                             width: `${Math.min(
                               100,
                               Math.max(
-                                15,
+                                0,
                                 Math.round(
-                                  (((me as any)?.characterExp || 70) /
-                                    (((me as any)?.characterLevel || 7) * 200)) *
+                                  ((me?.characterExp ?? 0) /
+                                    ((me?.characterLevel ?? 1) * 200)) *
                                     100
                                 )
                               )
@@ -1190,20 +1190,20 @@ export default function BoardView({
           {/* Background Map: Video with GPU acceleration or Static Image in Eco Mode */}
           {ecoMode ? (
             <img
-              src="/BoardHAP.png?v=16"
+              src="/BoardHAP.png?v=32"
               alt="Игровое поле"
               className="absolute inset-0 w-full h-full object-fill opacity-100 pointer-events-none z-0"
             />
           ) : (
             <video
               ref={boardVideoRef}
-              src="/BoardHAP.mp4?v=16"
+              src="/BoardHAP.mp4?v=32"
               autoPlay
               loop
               muted
               playsInline
               preload="metadata"
-              poster="/BoardHAP.png?v=16"
+              poster="/BoardHAP.png?v=32"
               disablePictureInPicture
               disableRemotePlayback
               className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 [transform:translateZ(0)]"
@@ -1215,8 +1215,13 @@ export default function BoardView({
             SEC_BOARD_A1 :: LAT: 32.39 TOP: 92.83
           </div>
 
-          {/* SVG Connection Lines */}
-          {Boolean(gameState.calibrationMode && userRole === "admin") && (
+          {/* Authoritative path over the decorative background; never use painted cell labels. */}
+          <div className="absolute inset-x-0 top-[15%] bottom-[4%] bg-gradient-to-b from-[#071426] via-[#050d1d] to-[#071426] pointer-events-none z-[1]" />
+          <div className="absolute left-[15%] right-[5%] bottom-[4.5%] z-10 text-center font-mono text-[8px] text-cyan-200 pointer-events-none">К — контракт · Ф — фиксер · Д — дроп · Б — босс</div>
+          {[["I", 78], ["II", 62], ["III", 46], ["IV", 30]].map(([label, y]) => (
+            <div key={label} style={{ top: `${y}%` }} className="absolute left-[3%] z-10 font-mono text-[10px] text-cyan-300 pointer-events-none">{label}</div>
+          ))}
+          {(
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none z-10"
               viewBox="0 0 100 100"
@@ -1232,10 +1237,10 @@ export default function BoardView({
                   })
                   .join(" ")}
                 fill="none"
-                stroke="rgba(0, 255, 170, 0.4)"
-                strokeWidth="0.8"
-                strokeDasharray="2 2"
-                className="animate-[dash_10s_linear_infinite]"
+                stroke="rgba(0, 240, 255, 0.75)"
+                strokeWidth="0.6"
+                strokeLinejoin="round"
+                strokeLinecap="round"
               />
             </svg>
           )}

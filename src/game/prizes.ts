@@ -13,7 +13,7 @@ function blob(b: ActiveBonus | null | undefined): string {
 export function crystalTier(bonus: ActiveBonus | null | undefined): number {
   const s = blob(bonus);
   if (!s.trim()) return 0;
-  if (s.includes("МЕГА")) return 3;
+  if (s.includes("МЕГА") || bonus?.value === 13800) return 3;
   if (s.includes("МАЛЫЙ")) return 1;
   if (s.includes("КРИСТАЛЛ")) return 2;
   return 0;
